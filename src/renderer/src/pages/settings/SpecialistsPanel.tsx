@@ -1217,6 +1217,7 @@ const SpecialistsPanel = ({
                   kind: 'marketplace-release',
                   sourceId: listing.sourceId,
                   sourceName: listing.sourceName,
+                  displayName: listing.displayName,
                   sourceTrust: listing.sourceTrust,
                   id: listing.id,
                   version: listing.version,
@@ -1263,7 +1264,7 @@ const SpecialistsPanel = ({
             />
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
               <dt className="text-muted-foreground">{t('Version')}</dt>
-              <dd>{specialist.packageVersion ?? '0.1.0'}</dd>
+              <dd>{specialist.packageVersion ?? t('Unavailable')}</dd>
               {specialist.origin === 'imported' ? (
                 <>
                   <dt className="text-muted-foreground">{t('Source')}</dt>
@@ -2193,6 +2194,7 @@ const SpecialistsPanel = ({
                                       kind: 'marketplace-release',
                                       sourceId: listing.sourceId,
                                       sourceName: listing.sourceName,
+                                      displayName: listing.displayName,
                                       sourceTrust: listing.sourceTrust,
                                       id: listing.id,
                                       version: listing.version,
@@ -2557,6 +2559,13 @@ const SpecialistsPanel = ({
                 <p className="mt-1 text-sm text-muted-foreground">
                   {t('Browse the Marketplace or create a Specialist to get started.')}
                 </p>
+                <Button
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => onNavigate({ kind: 'marketplace' })}
+                >
+                  {t('Marketplace')}
+                </Button>
               </div>
             ) : (
               <div className="flex flex-col items-center rounded-lg border border-dashed border-border px-4 py-10 text-center">

@@ -28,6 +28,7 @@ import { createOptimisticBooleanCoordinator } from './settings-optimistic-boolea
 
 type SettingsConnectorsProjection = {
   connectors: ConnectorView[]
+  marketplaceListings?: import('../../../shared/connector-marketplace').ConnectorMarketplaceListing[]
   customServers: CustomServerView[]
   reservedCustomServerIds?: string[]
   skillProjectionStatus?: 'degraded'
@@ -177,6 +178,7 @@ export const createSettingsConnectorsSlice = ({
     generation: number
   ): NormalizedSettingsConnectorsProjection => ({
     ...projection,
+    marketplaceListings: projection.marketplaceListings,
     skillProjectionStatus: projection.skillProjectionStatus,
     openAlex: projection.openAlex ?? { hasApiKey: false },
     reservedCustomServerIds: projection.reservedCustomServerIds ?? [],

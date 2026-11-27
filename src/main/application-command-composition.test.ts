@@ -927,7 +927,7 @@ describe('application command composition', () => {
   })
 })
 
-it('routes Task Connector reads to the existing Settings owner without adding Web diagnostics', async () => {
+it('routes Task Connector reads to the existing Settings owner and restricts diagnostics to local clients', async () => {
   const snapshot = { connectors: [], customServers: [], ncbi: { hasApiKey: false } }
   const listConnectors = vi.fn(async () => snapshot)
   const composition = createApplicationCommandComposition({
@@ -938,7 +938,7 @@ it('routes Task Connector reads to the existing Settings owner without adding We
     snapshot
   )
   expect(listConnectors).toHaveBeenCalledOnce()
-  expect(composition.localWeb.commandNames()).not.toContain('settings:test-custom-server')
+  expect(composition.localWeb.commandNames()).toContain('settings:test-custom-server')
   expect(composition.remoteWeb.commandNames()).not.toContain('settings:test-custom-server')
   await composition.dispose()
 })

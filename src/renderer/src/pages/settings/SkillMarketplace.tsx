@@ -1,3 +1,8 @@
+import { MarketplaceEmptyState } from '../marketplace/MarketplaceEmptyState'
+import { useRelativeTimeFormat } from '@/hooks/useDateTimeFormat'
+import { MarketplaceSkeleton } from '../marketplace/MarketplaceSkeleton'
+import { MarketplaceFilters } from '../marketplace/MarketplaceFilters'
+import { matchesMarketplaceFilters } from '../marketplace/marketplace-filters'
 import { ResourceDetailActions, ResourceDetailHeader } from '../marketplace/ResourceDetailLayout'
 import { ScrollText } from 'lucide-react'
 import type { SkillMarketplaceView } from '../../lib/settings-navigation'
@@ -40,7 +45,9 @@ import {
   ResourceCenterModeTabs
 } from '../marketplace/ResourceCenterModeTabs'
 import {
-  ResourceMarketplaceCardContent,
+  MarketplaceTrustBadge,
+  marketplaceGridClassName,
+  ResourceMarketplaceCard,
   ResourceMarketplaceIdentity
 } from '../marketplace/ResourceMarketplaceIdentity'
 import {
@@ -67,6 +74,61 @@ function MetadataLink({
     <ExternalTextLink href={href} className="max-w-full break-all">
       {children}
     </ExternalTextLink>
+  )
+}
+
+function SkillDocumentPreview({
+  id,
+  snapshotId
+}: {
+  id: string
+  snapshotId: string
+}): React.JSX.Element {
+  const { t } = useTranslation()
+  const [document, setDocument] = useState<string>()
+  const [loading, setLoading] = useState(false)
+  const [failed, setFailed] = useState(false)
+  async function load(): Promise<void> {
+    setLoading(true)
+    setFailed(false)
+    try {
+      const result = await window.api.settings.getSkillMarketplaceDetail({
+        id,
+        snapshotId,
+        previewDocument: true
+      })
+      if (result.ok && result.value.document !== undefined) setDocument(result.value.document)
+      else setFailed(true)
+    } catch {
+      setFailed(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+  return (
+    <details
+      className="skill-marketplace-disclosure"
+      onToggle={(event) => {
+        if (event.currentTarget.open && !loading && document === undefined && !failed) void load()
+      }}
+    >
+      <summary>
+        {'SKILL.md'}
+        <ChevronDown className="size-4" />
+      </summary>
+      {loading && <p role="status">{t('Loading…')}</p>}
+      {failed && (
+        <ErrorNotice
+          title={t('Unavailable')}
+          primaryButton={{ label: t('Retry'), onClick: load }}
+        />
+      )}
+      {document && (
+        <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs">
+          {document}
+        </pre>
+      )}
+    </details>
   )
 }
 
@@ -298,11 +360,13 @@ function MarketplaceInstallControls({
           tone={conflict ? 'amber' : 'red'}
           role={failure ? 'alert' : 'status'}
           title={failure ? t('Skill installation failed') : t('Skill installation blocked')}
-          description={conflict ? conflictDescription : undefined}
-          errorCode={[failure?.error ?? 'conflict', conflictReason, conflictSkillId]
-            .filter(Boolean)
-            .join(' / ')}
-          diagnosticsLabel={t('Details')}
+          description={
+            conflict
+              ? conflictDescription
+              : failure?.error === 'integrity'
+                ? t('Marketplace verification failed')
+                : undefined
+          }
           primaryButton={
             conflict && onManageLocal
               ? {
@@ -540,7 +604,6 @@ function MarketplaceInstallControls({
 export function SkillMarketplace({
   view,
   onNavigate,
-  onImportFromGitHub,
   localRevisionKey = 0,
   onInstallationChanged,
   addAction,
@@ -552,9 +615,9 @@ export function SkillMarketplace({
   localRevisionKey?: number
   onInstallationChanged?: () => void
   addAction?: React.ReactNode
-  onImportFromGitHub?: () => void
 }): React.JSX.Element {
   const { t, i18n } = useTranslation()
+  const formatRelative = useRelativeTimeFormat()
   const installedCount = useSettingsStore(
     (state) => state.skills.filter((skill) => skill.available !== false).length
   )
@@ -570,6 +633,7 @@ export function SkillMarketplace({
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
   const [sort, setSort] = useState('name')
+  const [source, setSource] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const isBatch = view.kind === 'marketplace-batch'
   const [batchMode, setBatchMode] = useState<MarketplaceBatchMode>('install')
@@ -581,6 +645,7 @@ export function SkillMarketplace({
         query: string
         category: string
         sort: string
+        source: string
         statusFilter: string
         visibleCount: number
       }
@@ -588,12 +653,13 @@ export function SkillMarketplace({
   >(undefined)
   // Adjust on route transitions before committing DOM so scroll restoration sees the saved cards.
   if (isBatch && !browseSnapshot) {
-    setBrowseSnapshot({ query, category, sort, statusFilter, visibleCount })
+    setBrowseSnapshot({ query, category, sort, source, statusFilter, visibleCount })
   } else if (view.kind === 'marketplace' && browseSnapshot) {
     // Inspecting a detail is not an exit: keep the batch selection and mode for Back.
     setQuery(browseSnapshot.query)
     setCategory(browseSnapshot.category)
     setSort(browseSnapshot.sort)
+    setSource(browseSnapshot.source)
     setStatusFilter(browseSnapshot.statusFilter)
     setVisibleCount(browseSnapshot.visibleCount)
     setBrowseSnapshot(undefined)
@@ -776,7 +842,7 @@ export function SkillMarketplace({
         if (!skillMarketplaceStableVersionPattern.test(item.version)) continue
         const state = installations[item.id]
         if (!state || state.kind === 'not-installed') install++
-        else if (state.kind === 'installed' && state.canUpdate && !state.requiresPreview) update++
+        else if (state.kind === 'installed' && state.canUpdate) update++
       }
     return { install, update }
   }, [items, installations])
@@ -791,8 +857,20 @@ export function SkillMarketplace({
     [installations, batchMode]
   )
   const modeItems = useMemo(
-    () => (isBatch ? items.filter(canSelect) : items),
-    [items, isBatch, canSelect]
+    () =>
+      isBatch
+        ? items.filter((item) => {
+            const state = installations?.[item.id]
+            return (
+              canSelect(item) ||
+              (batchMode === 'update' &&
+                skillMarketplaceStableVersionPattern.test(item.version) &&
+                state?.kind === 'installed' &&
+                state.canUpdate)
+            )
+          })
+        : items,
+    [items, isBatch, batchMode, installations, canSelect]
   )
   const filteredItems = useMemo(
     () => filterSkillMarketplace(modeItems, query, category, sort, i18n.language),
@@ -803,17 +881,25 @@ export function SkillMarketplace({
     for (const item of modeItems) counts.set(item.category, (counts.get(item.category) ?? 0) + 1)
     return counts
   }, [modeItems])
-  const matches = useMemo(
+  const facets = useMemo(
     () =>
-      filteredItems.filter((item) => {
-        const state = installations?.[item.id]
-        return (
-          isBatch ||
-          statusFilter === 'all' ||
-          (state?.kind === 'installed' && (statusFilter === 'installed' || state.canUpdate))
-        )
-      }),
-    [filteredItems, installations, statusFilter, isBatch]
+      new Map(
+        modeItems.map((item) => {
+          const state = installations?.[item.id]
+          return [
+            item.id,
+            {
+              official: true,
+              installed: state?.kind === 'installed',
+              update: state?.kind === 'installed' && state.canUpdate
+            }
+          ]
+        })
+      ),
+    [modeItems, installations]
+  )
+  const matches = filteredItems.filter(
+    (item) => isBatch || matchesMarketplaceFilters(facets.get(item.id)!, source, statusFilter)
   )
   const selectedItems = items.filter((item) => selectedIds.has(item.id) && canSelect(item))
   const selectMode = (mode: MarketplaceBatchMode): void => {
@@ -854,9 +940,15 @@ export function SkillMarketplace({
         '[data-slot="skill-marketplace-card"]'
       )
       const state = installedUpdate.installation
-      const leavesFilter =
-        statusFilter !== 'all' &&
-        (state.kind !== 'installed' || (statusFilter === 'updates' && !state.canUpdate))
+      const leavesFilter = !matchesMarketplaceFilters(
+        {
+          official: true,
+          installed: state.kind === 'installed',
+          update: state.kind === 'installed' && state.canUpdate
+        },
+        source,
+        statusFilter
+      )
       restoreFocus.current = Boolean(
         leavesFilter &&
         surface.current?.contains(focusedCard ?? null) &&
@@ -923,12 +1015,16 @@ export function SkillMarketplace({
   const renderCatalogToolbar = (toolbarActions: React.ReactNode): React.JSX.Element => (
     <ResourceCatalogToolbar
       onResetFilters={() => {
+        resetFilter(setSource, 'all')
         resetFilter(setCategory, 'all')
         resetFilter(setStatusFilter, 'all')
         resetFilter(setSort, 'name', false)
       }}
       activeFilterCount={
-        Number(category !== 'all') + Number(statusFilter !== 'all') + Number(sort !== 'name')
+        Number(source !== 'all') +
+        Number(category !== 'all') +
+        Number(statusFilter !== 'all') +
+        Number(sort !== 'name')
       }
       resetFiltersDisabled={isBatch && batchBusy}
       data-batch={isBatch || undefined}
@@ -945,6 +1041,15 @@ export function SkillMarketplace({
               results: matches.length,
               total: modeItems.length
             })}
+            {catalog?.ok && catalog.value.checkedAt && (
+              <>
+                {' '}
+                ·{' '}
+                {t('Updated {{time}}', {
+                  time: formatRelative(new Date(catalog.value.checkedAt).toISOString())
+                })}
+              </>
+            )}
           </p>
           {toolbarActions}
         </>
@@ -959,6 +1064,15 @@ export function SkillMarketplace({
         />
       }
     >
+      {!isBatch && (
+        <MarketplaceFilters
+          entries={[...facets.values()]}
+          source={source}
+          status={statusFilter}
+          onSource={(value) => resetFilter(setSource, value)}
+          onStatus={(value) => resetFilter(setStatusFilter, value)}
+        />
+      )}
       <ResourceCatalogFilter label={t('Category')}>
         <Select
           value={category}
@@ -980,29 +1094,6 @@ export function SkillMarketplace({
           </SelectContent>
         </Select>
       </ResourceCatalogFilter>
-      {installations && !isBatch ? (
-        <ResourceCatalogFilter label={t('Installation status')}>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => resetFilter(setStatusFilter, value)}
-          >
-            <SelectTrigger aria-label={t('Installation status')} className="w-40">
-              <span className="truncate">
-                {statusFilter === 'all'
-                  ? t('All')
-                  : statusFilter === 'installed'
-                    ? t('Installed')
-                    : t('Update available')}
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t('All')}</SelectItem>
-              <SelectItem value="installed">{t('Installed')}</SelectItem>
-              <SelectItem value="updates">{t('Update available')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </ResourceCatalogFilter>
-      ) : null}
       <ResourceCatalogFilter label={t('Sort by')}>
         <Select
           value={sort}
@@ -1028,6 +1119,7 @@ export function SkillMarketplace({
       data-batch={isBatch || undefined}
     >
       <SkillMarketplaceBatchControls
+        names={new Map(items.map((item) => [item.id, item.displayName]))}
         refreshing={refreshing}
         expanded={isBatch}
         onOpen={() => onNavigate({ kind: 'marketplace-batch' })}
@@ -1053,7 +1145,7 @@ export function SkillMarketplace({
         }
         mode={batchMode}
         modeCounts={modeCounts}
-        filteredCount={matches.length}
+        filteredCount={matches.filter(canSelect).length}
         filteredSelectedCount={matches.filter(({ id }) => selectedIds.has(id)).length}
         showSelection={isBatch && Boolean(catalog?.ok && installations)}
         disabled={localSyncPending || localSyncError}
@@ -1071,14 +1163,7 @@ export function SkillMarketplace({
               <ResourceCatalogHeader
                 icon={ScrollText}
                 title={t('Skills')}
-                actions={
-                  addAction ??
-                  (onImportFromGitHub ? (
-                    <Button variant="outline" size="sm" onClick={onImportFromGitHub}>
-                      {t('Import from GitHub')}
-                    </Button>
-                  ) : undefined)
-                }
+                actions={addAction}
                 selectionBar={selectionControls}
                 toolbar={renderCatalogToolbar(toolbarActions)}
               >
@@ -1118,33 +1203,7 @@ export function SkillMarketplace({
               />
             ) : null}
             {!result ? (
-              <div
-                role="status"
-                aria-busy="true"
-                data-slot="skill-marketplace-loading"
-                className="space-y-4"
-              >
-                <span className="sr-only">{t('Loading…')}</span>
-                <div
-                  aria-hidden="true"
-                  className="h-9 rounded-lg bg-muted animate-pulse motion-reduce:animate-none"
-                />
-                <div aria-hidden="true" className="skill-marketplace-grid grid gap-3">
-                  {Array.from({ length: 6 }, (_, index) => (
-                    <div
-                      key={index}
-                      className="space-y-4 rounded-lg border border-border p-4 animate-pulse motion-reduce:animate-none"
-                    >
-                      <div className="h-5 w-3/5 rounded bg-muted" />
-                      <div className="space-y-2">
-                        <div className="h-4 rounded bg-muted" />
-                        <div className="h-4 w-4/5 rounded bg-muted" />
-                      </div>
-                      <div className="h-6 w-2/5 rounded bg-muted" />
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <MarketplaceSkeleton label={t('Loading…')} />
             ) : !result.ok ? (
               <ErrorNotice
                 role="alert"
@@ -1187,6 +1246,7 @@ export function SkillMarketplace({
                     name={selected.displayName}
                     description={selected.summary}
                   >
+                    <MarketplaceTrustBadge official />
                     <span data-slot="skill-marketplace-detail-category">
                       {labels[selected.category]}
                     </span>
@@ -1238,6 +1298,13 @@ export function SkillMarketplace({
                       </TooltipProvider>
                     ) : null}
                   </ResourceDetailHeader>
+                  {snapshotId && (
+                    <SkillDocumentPreview
+                      key={snapshotId + selected.id}
+                      snapshotId={snapshotId}
+                      id={selected.id}
+                    />
+                  )}
                   {detailResult?.ok && detailResult.value.installation && snapshotId ? (
                     <MarketplaceInstallControls
                       key={detailKey}
@@ -1382,34 +1449,48 @@ export function SkillMarketplace({
                   ) : null}
                 </div>
               ) : (
-                <p role="status">{t('No skills match your search.')}</p>
+                <ErrorNotice
+                  title={t('Unavailable')}
+                  primaryButton={{
+                    label: t('Retry'),
+                    onClick: () => setDetailRefresh((value) => value + 1)
+                  }}
+                />
               )
             ) : (
               <>
                 <TooltipProvider skipDelayDuration={300}>
-                  <div className="resource-marketplace-grid grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3">
+                  <div className={marketplaceGridClassName}>
                     {matches.slice(0, visibleCount).map((item) => {
                       const installation = installations?.[item.id]
                       return (
-                        <article
+                        <ResourceMarketplaceCard
                           key={item.id}
-                          data-slot="skill-marketplace-card"
-                          data-skill-id={item.id}
-                          data-selected={(isBatch && selectedIds.has(item.id)) || undefined}
-                          className="resource-marketplace-card relative flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 text-card-foreground transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-sm motion-reduce:transition-none"
-                        >
-                          <ResourceMarketplaceCardContent
-                            id={item.id}
-                            name={item.displayName}
-                            publisher={skillMarketplaceAttribution(item)}
-                            summary={item.summary}
-                            onOpen={() => openDetail(item)}
-                            primaryAction={
-                              !isBatch &&
-                              catalog?.ok &&
-                              installations &&
-                              skillMarketplaceStableVersionPattern.test(item.version) &&
-                              installation?.kind !== 'conflict' ? (
+                          as="article"
+                          selected={isBatch && selectedIds.has(item.id)}
+                          id={item.id}
+                          name={item.displayName}
+                          publisher={item.publisher.name}
+                          author={skillMarketplaceAttribution(item)}
+                          official
+                          version={item.version}
+                          source="Open-Science"
+                          summary={item.summary}
+                          onOpen={() => openDetail(item)}
+                          primaryAction={
+                            !isBatch &&
+                            catalog?.ok &&
+                            installations &&
+                            skillMarketplaceStableVersionPattern.test(item.version) ? (
+                              installation?.kind === 'conflict' ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openDetail(item)}
+                                >
+                                  {t('Resolve conflict')}
+                                </Button>
+                              ) : (
                                 <MarketplaceInstallControls
                                   compact
                                   entry={item}
@@ -1422,63 +1503,64 @@ export function SkillMarketplace({
                                   onOpenDetail={() => openDetail(item)}
                                   onManageLocal={onManageLocal}
                                 />
-                              ) : null
-                            }
-                            status={
-                              !skillMarketplaceStableVersionPattern.test(item.version)
-                                ? t('Unavailable')
-                                : installation?.kind === 'conflict'
-                                  ? t('Local conflict')
-                                  : installation?.kind === 'installed' &&
-                                      (isBatch || installation.canUpdate)
-                                    ? installation.canUpdate
-                                      ? t('Update available')
-                                      : t('Installed')
-                                    : undefined
-                            }
-                            selection={
-                              isBatch ? (
-                                <input
-                                  type="checkbox"
-                                  className="absolute right-4 top-4 size-4 accent-primary"
-                                  aria-label={t('Select {{name}}', { name: item.displayName })}
-                                  checked={selectedIds.has(item.id) && canSelect(item)}
-                                  disabled={batchBusy || !canSelect(item)}
-                                  onChange={(event) =>
-                                    setSelectedIds((current) => {
-                                      const next = new Set(current)
-                                      if (event.target.checked) next.add(item.id)
-                                      else next.delete(item.id)
-                                      return next
-                                    })
-                                  }
-                                />
-                              ) : null
-                            }
-                          />
-                        </article>
+                              )
+                            ) : null
+                          }
+                          status={
+                            !skillMarketplaceStableVersionPattern.test(item.version)
+                              ? 'unavailable'
+                              : installation?.kind === 'conflict'
+                                ? 'attention'
+                                : installation?.kind === 'installed'
+                                  ? installation.canUpdate
+                                    ? 'update'
+                                    : 'installed'
+                                  : undefined
+                          }
+                          selection={
+                            isBatch && canSelect(item) ? (
+                              <input
+                                type="checkbox"
+                                className="absolute left-4 top-4 size-4 accent-primary"
+                                aria-label={t('Select {{name}}', { name: item.displayName })}
+                                checked={selectedIds.has(item.id) && canSelect(item)}
+                                disabled={batchBusy || !canSelect(item)}
+                                onChange={(event) =>
+                                  setSelectedIds((current) => {
+                                    const next = new Set(current)
+                                    if (event.target.checked) next.add(item.id)
+                                    else next.delete(item.id)
+                                    return next
+                                  })
+                                }
+                              />
+                            ) : null
+                          }
+                        />
                       )
                     })}
                   </div>
                 </TooltipProvider>
                 {matches.length === 0 ? (
-                  <div className="space-y-3 py-8 text-center">
-                    <p className="text-sm text-muted-foreground">
-                      {t('No skills match your search.')}
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setQuery('')
-                        setCategory('all')
-                        setStatusFilter('all')
-                        setSelectedIds(new Set())
-                        setVisibleCount(SKILL_MARKETPLACE_PAGE_SIZE)
-                      }}
-                    >
-                      {t('Clear filters')}
-                    </Button>
-                  </div>
+                  <MarketplaceEmptyState
+                    message={
+                      items.length ? t('No skills match your search.') : t('No skills available')
+                    }
+                    action={items.length ? t('Clear all') : t('Refresh')}
+                    onAction={() => {
+                      if (!items.length) {
+                        setRefresh((value) => value + 1)
+                        return
+                      }
+                      setQuery('')
+                      setSource('all')
+                      setSort('name')
+                      setCategory('all')
+                      setStatusFilter('all')
+                      setSelectedIds(new Set())
+                      setVisibleCount(SKILL_MARKETPLACE_PAGE_SIZE)
+                    }}
+                  />
                 ) : null}
                 {visibleCount < matches.length ? (
                   <div

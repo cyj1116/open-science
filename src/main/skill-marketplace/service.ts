@@ -1,3 +1,4 @@
+import { readDurableJsonFile, writeDurableJsonFile } from '@aipoch/durable-files'
 import { z } from 'zod'
 import type {
   SkillMarketplaceCatalog,
@@ -55,7 +56,33 @@ export class SkillMarketplaceService {
     Promise<SkillMarketplaceResult<SkillMarketplaceDetail>>
   >()
 
-  constructor(private readonly fetch: typeof globalThis.fetch = globalThis.fetch) {}
+  constructor(
+    private readonly fetch: typeof globalThis.fetch = globalThis.fetch,
+    private readonly cachePath?: string
+  ) {}
+  private restored?: Promise<void>
+
+  private async restoreCatalog(): Promise<void> {
+    if (!this.cachePath) return
+    const cached = await readDurableJsonFile(
+      this.cachePath,
+      (contents) => {
+        const data = z
+          .object({ root: z.string(), signature: z.string(), checkedAt: z.number().finite() })
+          .parse(JSON.parse(contents))
+        return {
+          root: verifyMarketplaceRoot(
+            Buffer.from(data.root, 'base64'),
+            Buffer.from(data.signature, 'base64')
+          ),
+          checkedAt: data.checkedAt
+        }
+      },
+      {},
+      { maxBytes: 6 * 1024 * 1024 }
+    )
+    if (cached.status === 'found') this.remember(cached.value.root, cached.value.checkedAt)
+  }
 
   retainSnapshot(request: SkillMarketplaceBatchRequest): (() => void) | undefined {
     const root = this.snapshots.get(request.snapshotId)
@@ -197,10 +224,35 @@ export class SkillMarketplaceService {
         signal
       )
     }
+    if (this.cachePath) {
+      await writeDurableJsonFile(
+        this.cachePath,
+        JSON.stringify({
+          root: Buffer.from(bytes).toString('base64'),
+          signature: Buffer.from(signature).toString('base64'),
+          checkedAt: Date.now()
+        })
+      ).catch(() =>
+        createLogger('skill-marketplace').warn('Could not persist the verified catalog')
+      )
+    }
     return root
   }
 
   list(
+    request?: SkillMarketplaceCatalogRequest
+  ): Promise<SkillMarketplaceResult<SkillMarketplaceCatalog>> {
+    if (this.cachePath && !this.restored) {
+      this.restored = this.restoreCatalog().catch(() =>
+        createLogger('skill-marketplace').warn('Discarding unreadable catalog cache')
+      )
+    }
+    return this.restored
+      ? this.restored.then(() => this.listVerified(request))
+      : this.listVerified(request)
+  }
+
+  private listVerified(
     request?: SkillMarketplaceCatalogRequest
   ): Promise<SkillMarketplaceResult<SkillMarketplaceCatalog>> {
     const parsed = catalogRequest.safeParse(request ?? {})
@@ -284,18 +336,22 @@ export class SkillMarketplaceService {
     }
   }
 
-  private remember(root: MarketplaceRoot): SkillMarketplaceResult<SkillMarketplaceCatalog> {
+  private remember(
+    root: MarketplaceRoot,
+    checkedAt = Date.now()
+  ): SkillMarketplaceResult<SkillMarketplaceCatalog> {
     const snapshotId = root.revision
     this.snapshots.delete(snapshotId)
     this.snapshots.set(snapshotId, root)
     // Bounded, memory-only history lets an open detail survive a catalog refresh.
     this.pruneSnapshots()
     const catalog = {
+      checkedAt,
       snapshotId,
       revision: root.revision,
       entries: root.skills.map(toMarketplaceEntry)
     }
-    this.current = { catalog, checkedAt: Date.now() }
+    this.current = { catalog, checkedAt }
     return { ok: true, value: structuredClone(catalog) }
   }
 

@@ -275,7 +275,6 @@ const ELECTRON_NATIVE_COMMAND_NAMES = Object.freeze([
 
 const TASK_NATIVE_COMMAND_NAMES = Object.freeze([
   'settings:bootstrap',
-  'settings:test-custom-server',
   'projects:update-session-defaults',
   'reviewer:abort',
   'settings:set-agent-routing',

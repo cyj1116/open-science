@@ -96,6 +96,8 @@ export type MarketplaceSkill = {
 }
 
 export type MarketplaceConnectorReference = {
+  displayName?: string
+  description?: string
   id: string
   required: boolean
   defaultSelected: boolean
@@ -128,6 +130,7 @@ export type GetMarketplaceReleaseRequest = {
 }
 
 export type PrepareMarketplaceInstallRequest = GetMarketplaceReleaseRequest & {
+  downloadToken?: string
   selectedSkillIds: readonly string[]
   selectedConnectorIds: readonly string[]
 }

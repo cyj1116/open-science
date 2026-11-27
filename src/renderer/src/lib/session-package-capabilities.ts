@@ -5,7 +5,7 @@ const isWebEventSurface = (): boolean =>
   typeof document !== 'undefined' &&
   document.documentElement.hasAttribute(WEB_EVENT_SURFACE_ATTRIBUTE)
 
-const isRemoteWebSurface = (): boolean =>
+export const isRemoteWebSurface = (): boolean =>
   typeof document !== 'undefined' &&
   document.documentElement.getAttribute(WEB_EVENT_SURFACE_ATTRIBUTE) === 'true' &&
   document.documentElement.getAttribute(WEB_CALLER_LOCATION_ATTRIBUTE) !== 'local'

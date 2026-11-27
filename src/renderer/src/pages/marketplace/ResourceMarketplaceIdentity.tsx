@@ -1,3 +1,4 @@
+import { BadgeCheck } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
@@ -52,6 +53,7 @@ export { ResourceMarketplaceIdentity }
 
 export const ResourceCardBody = ({
   identity,
+  badge,
   name,
   summary,
   attribution,
@@ -60,6 +62,7 @@ export const ResourceCardBody = ({
   openLabel,
   disabled = false
 }: {
+  badge?: ReactNode
   identity: ReactNode
   name: string
   summary: string
@@ -112,6 +115,7 @@ export const ResourceCardBody = ({
               {name}
             </span>
           )}
+          {badge}
         </div>
         {attribution ? (
           <p className="mt-1 truncate text-xs text-muted-foreground" title={attribution}>
@@ -180,49 +184,119 @@ export const ResourceCardFooter = ({
   )
 }
 
-export const ResourceMarketplaceCardContent = ({
+export function MarketplaceTrustBadge({ official }: { official: boolean }): React.JSX.Element {
+  const { t } = useTranslation()
+  return (
+    <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
+      {official && <BadgeCheck className="size-3.5 text-primary" aria-hidden="true" />}
+      {official ? t('Official') : t('Community')}
+    </span>
+  )
+}
+
+const statusLabels = {
+  installed: 'Installed',
+  update: 'Update available',
+  attention: 'Needs attention',
+  unavailable: 'Unavailable'
+} as const
+const statusColors = {
+  installed:
+    'bg-status-success-surface text-status-success-foreground dark:bg-status-success-dark-surface dark:text-status-success-dark-foreground',
+  update:
+    'bg-status-info-surface text-status-info-foreground dark:bg-status-info-dark-surface dark:text-status-info-dark-foreground',
+  attention:
+    'bg-status-warning-surface text-status-warning-foreground dark:bg-status-warning-dark-surface dark:text-status-warning-dark-foreground',
+  unavailable:
+    'bg-status-failure-surface text-status-failure-foreground dark:bg-status-failure-dark-surface dark:text-status-failure-dark-foreground'
+}
+
+export const marketplaceGridClassName =
+  'resource-marketplace-grid grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3'
+
+export const ResourceMarketplaceCard = ({
+  as: Card = 'li',
+  selected,
   id,
   name,
   publisher,
+  author,
+  official,
+  version,
+  source,
+  metadata,
   summary,
   status,
   selection,
   primaryAction,
   onOpen
 }: {
+  as?: 'li' | 'article'
+  selected?: boolean
   id: string
   name: string
+  author?: string
+  official: boolean
+  version: string
+  metadata?: string
+  source: string
   publisher: string
   summary: string
-  status?: ReactNode
+  status?: keyof typeof statusLabels
   selection?: ReactNode
   primaryAction?: ReactNode
   onOpen: () => void
 }): React.JSX.Element => {
+  const { t } = useTranslation()
   return (
-    <>
+    <Card
+      data-slot={Card === 'article' ? 'skill-marketplace-card' : 'marketplace-card'}
+      data-skill-id={Card === 'article' ? id : undefined}
+      data-selected={selected || undefined}
+      className="resource-marketplace-card relative flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 text-card-foreground transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-sm motion-reduce:transition-none"
+      onClick={(event) => {
+        const target = event.target
+        if (
+          !selection &&
+          !event.defaultPrevented &&
+          target instanceof Element &&
+          event.currentTarget.contains(target) &&
+          !target.closest('button, a, input, label, summary, [role="button"]')
+        )
+          onOpen()
+      }}
+    >
       {selection ? <label className="resource-card-selection">{selection}</label> : null}
       <div inert={Boolean(selection)} className="flex min-w-0 flex-1 flex-col gap-3">
-        <div className={selection ? 'pr-6' : undefined}>
+        <div className={selection ? 'pl-6' : undefined}>
           <ResourceCardBody
             identity={<ResourceMarketplaceIdentity id={id} displayName={name} />}
             name={name}
             summary={summary}
-            attribution={publisher}
+            attribution={[...new Set([publisher, author].filter(Boolean))].join(' · ')}
+            badge={<MarketplaceTrustBadge official={official} />}
             onOpen={onOpen}
           />
         </div>
         <ResourceCardFooter
           selectionMode={Boolean(selection)}
           leading={
-            status ? (
-              <span className="min-w-0 text-xs text-muted-foreground">{status}</span>
-            ) : undefined
+            <>
+              <span className="text-xs text-muted-foreground">
+                {version} · {source}
+                {metadata && ' · ' + metadata}
+              </span>
+              {status && (
+                <span className={`rounded-full px-2 py-0.5 text-xs ${statusColors[status]}`}>
+                  {t(statusLabels[status])}
+                </span>
+              )}
+            </>
           }
           onOpen={onOpen}
           primaryAction={primaryAction}
         />
       </div>
-    </>
+    </Card>
   )
 }

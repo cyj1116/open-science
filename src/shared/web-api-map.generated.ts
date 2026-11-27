@@ -456,6 +456,7 @@ export const WEB_INVOKE_CHANNELS = {
   'settings.stopSkillMarketplaceBatch': 'settings:stop-skill-marketplace-batch',
   'settings.switchLocalShellToPowerShell': 'settings:switch-local-shell-to-powershell',
   'settings.testClassification': 'settings:test-classification',
+  'settings.testCustomServer': 'settings:test-custom-server',
   'settings.testImageModel': 'settings:test-image-model',
   'settings.uninstallClaude': 'settings:uninstall-claude',
   'settings.uninstallCodeBuddy': 'settings:uninstall-codebuddy',

@@ -1,3 +1,4 @@
+import { CONNECTOR_CATALOG } from '../../connectors/catalog'
 import { createHash, randomUUID } from 'node:crypto'
 import type {
   AddMarketplaceSourceRequest,
@@ -283,6 +284,7 @@ export class MarketplaceService {
   private readonly now: () => Date
   private readonly token: () => string
   private readonly sourceCandidates = new Map<string, SourceCandidateState>()
+  private readonly downloads = new Map<string, { ownerId?: number; controller: AbortController }>()
   private readonly installCandidates = new Map<string, InstallCandidateState>()
   private packageRecovery?: Promise<void>
   private readonly operationCoordinator: MarketplaceOperationCoordinator
@@ -393,11 +395,7 @@ export class MarketplaceService {
           result?.status === 'fulfilled' ? result.value.loadedRoot : undefined
         )
       }),
-      specialists: specialists.sort(
-        (left, right) =>
-          left.displayName.localeCompare(right.displayName) ||
-          left.sourceName.localeCompare(right.sourceName)
-      ),
+      specialists,
       failures
     }
   }
@@ -531,8 +529,28 @@ export class MarketplaceService {
     ownerId?: number,
     onDownloadProgress?: (progress: MarketplaceDownloadProgress) => void
   ): Promise<MarketplaceInstallPreview> {
+    const token = request.downloadToken ?? randomUUID()
+    if (typeof token !== 'string' || token.length > 64 || this.downloads.has(token))
+      throw new Error('Invalid Marketplace download token')
+    const controller = new AbortController()
+    this.downloads.set(token, { ownerId, controller })
+    try {
+      return await this.prepareDownload(request, ownerId, controller.signal, onDownloadProgress)
+    } finally {
+      this.downloads.delete(token)
+    }
+  }
+
+  private async prepareDownload(
+    request: PrepareMarketplaceInstallRequest,
+    ownerId: number | undefined,
+    signal: AbortSignal,
+    onDownloadProgress?: (progress: MarketplaceDownloadProgress) => void
+  ): Promise<MarketplaceInstallPreview> {
     await this.recover()
+    signal.throwIfAborted()
     const loaded = await this.loadRelease(request)
+    signal.throwIfAborted()
     const requestedSkills = [...new Set(request.selectedSkillIds)]
     const requestedConnectors = [...new Set(request.selectedConnectorIds)]
     const skillById = new Map(loaded.release.skills.map((skill) => [skill.id, skill]))
@@ -552,7 +570,7 @@ export class MarketplaceService {
     ) {
       throw new Error('Marketplace selection omits a required Connector.')
     }
-    const archiveBytes = await this.downloadArtifact(loaded, (transferred, total) =>
+    const archiveBytes = await this.downloadArtifact(loaded, signal, (transferred, total) =>
       onDownloadProgress?.({
         sourceId: request.sourceId,
         specialistId: request.specialistId,
@@ -562,6 +580,7 @@ export class MarketplaceService {
         percent: Math.min(100, Math.round((transferred / total) * 100))
       })
     )
+    signal.throwIfAborted()
     const requestedSkillNames = requestedSkills.map((id) => skillById.get(id)!.name)
     const filteredArchive = filterMarketplaceSpecialistZip(
       archiveBytes,
@@ -572,6 +591,7 @@ export class MarketplaceService {
       origin: 'marketplace'
     })
     try {
+      signal.throwIfAborted()
       if (
         (preview.summary &&
           (preview.summary.id !== loaded.release.specialist_id ||
@@ -709,6 +729,8 @@ export class MarketplaceService {
 
   cancel(candidateToken: unknown, ownerId?: number): void {
     if (typeof candidateToken !== 'string') return
+    const download = this.downloads.get(candidateToken)
+    if (download && download.ownerId === ownerId) download.controller.abort()
     if (this.sourceCandidates.get(candidateToken)?.ownerId === ownerId) {
       this.sourceCandidates.delete(candidateToken)
     }
@@ -719,6 +741,8 @@ export class MarketplaceService {
   }
 
   dispose(ownerId?: number): void {
+    for (const download of this.downloads.values())
+      if (download.ownerId === ownerId) download.controller.abort()
     for (const [token, candidate] of this.sourceCandidates) {
       if (candidate.ownerId === ownerId) this.sourceCandidates.delete(token)
     }
@@ -974,17 +998,22 @@ export class MarketplaceService {
           fileCount: skill.file_count,
           uncompressedBytes: skill.uncompressed_bytes
         })),
-        connectors: release.connectors.map((connector) => ({
-          id: connector.id,
-          required: connector.required,
-          defaultSelected: connector.default_selected
-        }))
+        connectors: release.connectors.map((connector) => {
+          const meta = CONNECTOR_CATALOG.find((item) => item.id === connector.id)
+          return {
+            id: connector.id,
+            required: connector.required,
+            defaultSelected: connector.default_selected,
+            ...(meta ? { displayName: meta.displayName, description: meta.description } : {})
+          }
+        })
       }
     }
   }
 
   private async downloadArtifact(
     loaded: LoadedRelease,
+    signal: AbortSignal,
     onProgress?: (transferred: number, total: number) => void
   ): Promise<Uint8Array> {
     const urls = [
@@ -1007,7 +1036,8 @@ export class MarketplaceService {
         ) {
           throw new MarketplaceError('verification', 'Marketplace artifact verification failed.')
         }
-      }
+      },
+      signal
     )
     return bytes
   }
@@ -1033,10 +1063,12 @@ export class MarketplaceService {
     allowArtifactRedirects = false,
     expectedTotal?: number,
     onProgress?: (transferred: number, total: number) => void,
-    verify?: (bytes: Uint8Array) => void
+    verify?: (bytes: Uint8Array) => void,
+    signal?: AbortSignal
   ): Promise<Uint8Array> {
     let lastError: unknown
     for (const url of urls) {
+      signal?.throwIfAborted()
       try {
         const bytes = await this.fetchOne(
           url,
@@ -1044,7 +1076,8 @@ export class MarketplaceService {
           source,
           allowArtifactRedirects,
           expectedTotal,
-          onProgress
+          onProgress,
+          signal
         )
         verify?.(bytes)
         return bytes
@@ -1061,17 +1094,19 @@ export class MarketplaceService {
     source?: ResolvedSource,
     allowArtifactRedirects = false,
     expectedTotal?: number,
-    onProgress?: (transferred: number, total: number) => void
+    onProgress?: (transferred: number, total: number) => void,
+    signal?: AbortSignal
   ): Promise<Uint8Array> {
     let url = new URL(initialUrl)
     for (let redirects = 0; redirects <= 3; redirects += 1) {
       this.assertAllowedUrl(url, source, allowArtifactRedirects)
+      const timeout = AbortSignal.timeout(
+        allowArtifactRedirects ? ARTIFACT_REQUEST_TIMEOUT_MS : METADATA_REQUEST_TIMEOUT_MS
+      )
       const response = await this.options.fetch(url, {
         redirect: 'manual',
         headers: { accept: 'application/json, application/zip, application/octet-stream' },
-        signal: AbortSignal.timeout(
-          allowArtifactRedirects ? ARTIFACT_REQUEST_TIMEOUT_MS : METADATA_REQUEST_TIMEOUT_MS
-        )
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout
       })
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location')

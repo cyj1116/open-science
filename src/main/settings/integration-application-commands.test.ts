@@ -222,11 +222,11 @@ describe('Settings integration application commands', () => {
     expect(settingsChannels).toEqual(
       expect.arrayContaining([
         ...expectedSkillChannels,
-        ...expectedConnectorChannels.filter((channel) => channel !== 'settings:test-custom-server'),
+        ...expectedConnectorChannels,
         ...expectedApprovalChannels
       ])
     )
-    expect(integrationContracts).toHaveLength(44)
+    expect(integrationContracts).toHaveLength(45)
     expect(
       integrationContracts
         ?.filter(
@@ -241,6 +241,7 @@ describe('Settings integration application commands', () => {
             contract.channel !== 'settings:cancel-custom-server-authentication' &&
             contract.channel !== 'settings:disconnect-custom-server' &&
             contract.channel !== 'settings:retry-connector-projection' &&
+            contract.channel !== 'settings:test-custom-server' &&
             contract.channel !== 'settings:retry-custom-server' &&
             contract.channel !== 'settings:list-device-credentials' &&
             contract.channel !== 'settings:create-device-credential' &&
@@ -271,6 +272,7 @@ describe('Settings integration application commands', () => {
             contract.channel === 'settings:cancel-custom-server-authentication' ||
             contract.channel === 'settings:disconnect-custom-server' ||
             contract.channel === 'settings:retry-connector-projection' ||
+            contract.channel === 'settings:test-custom-server' ||
             contract.channel === 'settings:retry-custom-server' ||
             contract.channel === 'settings:list-device-credentials' ||
             contract.channel === 'settings:create-device-credential' ||

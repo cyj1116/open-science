@@ -367,6 +367,7 @@ const REMOTE_LOCAL_ONLY_CHANNELS: GroupedInventory = {
     'remove-github-token',
     'remove-notebook-network',
     'retry-connector-projection',
+    'test-custom-server',
     'retry-custom-server',
     'review-notebook-private-destination',
     'save-github-token',

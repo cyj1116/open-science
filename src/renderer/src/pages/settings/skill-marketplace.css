@@ -1,11 +1,7 @@
-/* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V3
- * genre: modern-minimal · macrostructure: Catalogue · tone: utilitarian
- * Existing Open-Science tokens and Settings navigation; no decorative reveals.
- */
 [data-slot='skill-marketplace'] {
   container-type: inline-size;
 }
-.skill-marketplace-card[data-selected='true'] {
+[data-slot='skill-marketplace-card'][data-selected='true'] {
   border-color: var(--primary);
   background: color-mix(in srgb, var(--primary) 5%, var(--card));
 }
@@ -22,44 +18,11 @@
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
-.skill-marketplace-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
-}
-.skill-marketplace-filters > [role='combobox'] {
-  flex-grow: 1;
-  min-width: 0;
-}
-@container (min-width: 640px) {
-  .skill-marketplace-filters {
-    display: grid;
-    grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
-  }
-  .skill-marketplace-filters > [role='combobox'] {
-    width: 100%;
-  }
-  .skill-marketplace-filters[data-batch='true'] {
-    grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
-  }
-}
 .skill-marketplace-install-action[data-installed='true'] {
   color: var(--success-000);
   background-color: var(--background);
   border-color: var(--border);
   opacity: 1;
-}
-.skill-marketplace-card-heading {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-.skill-marketplace-card-controls {
-  display: contents;
-}
-.skill-marketplace-card-controls > .skill-marketplace-primary-action {
-  grid-column: 2;
-  grid-row: 1;
-  justify-self: end;
-}
-.skill-marketplace-card-controls > :not(.skill-marketplace-primary-action) {
-  grid-column: 1 / -1;
 }
 .skill-marketplace-metadata {
   grid-template-columns: 11rem minmax(0, 1fr);
@@ -95,7 +58,6 @@
   transform: rotate(180deg);
 }
 @media (hover: hover) {
-  .skill-marketplace-card:hover,
   .skill-marketplace-disclosure > summary:hover {
     background-color: var(--background);
   }

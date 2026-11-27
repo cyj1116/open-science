@@ -325,7 +325,7 @@ describe('ConnectorsPanel (groups)', () => {
     expect(header?.querySelector('[role=tab][aria-selected=true]')?.textContent).toContain(
       'Installed'
     )
-    expect(header?.querySelectorAll('[role=tab]')).toHaveLength(1)
+    expect(header?.querySelectorAll('[role=tab]')).toHaveLength(2)
     expect(header?.textContent).toContain('4')
     expect(header?.contains(actionBar!)).toBe(true)
     expect(actionBar?.textContent).not.toContain('Manage')

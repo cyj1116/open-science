@@ -14,6 +14,7 @@ export type MarketplaceBatchMode = 'install' | 'update' | undefined
 
 // Progress is a projection only. Unmounting the catalog never stops the main-process job.
 export function SkillMarketplaceBatchControls({
+  names,
   expanded,
   onOpen,
   onExit,
@@ -33,6 +34,7 @@ export function SkillMarketplaceBatchControls({
   onChanged,
   children
 }: {
+  names?: ReadonlyMap<string, string>
   expanded: boolean
   onOpen: () => void
   onExit: () => void
@@ -181,7 +183,7 @@ export function SkillMarketplaceBatchControls({
         if (result.value.status === 'completed' || result.value.status === 'stopped')
           onChangedRef.current()
         onClearSelection()
-      } else setError(`${t('Could not start batch installation.')} (${result.error})`)
+      } else setError(t('Could not start batch installation.'))
     } catch {
       if (mounted.current) setError(t('Could not start batch installation.'))
     } finally {
@@ -444,7 +446,8 @@ export function SkillMarketplaceBatchControls({
                 <ul className="max-h-40 overflow-auto space-y-1 text-xs">
                   {draft.items.map(({ id, version, expectedVersion }) => (
                     <li key={id} className="break-words">
-                      {id}: {expectedVersion ? `${expectedVersion} → ` : ''}
+                      {names?.get(id) ?? t('Skill')}:{' '}
+                      {expectedVersion ? `${expectedVersion} → ` : ''}
                       {version}
                     </li>
                   ))}
@@ -551,12 +554,13 @@ export function SkillMarketplaceBatchControls({
                   {batch.items.map((item) => (
                     <li key={item.id} className="flex items-start justify-between gap-3">
                       <span className="min-w-0 break-words">
-                        {item.id} <span className="text-muted-foreground">{item.version}</span>
+                        {names?.get(item.id) ?? t('Skill')}{' '}
+                        <span className="text-muted-foreground">{item.version}</span>
                       </span>
                       <span className="shrink-0 text-right">
                         {labels[item.status]}
                         {item.result && !item.result.ok ? (
-                          <span className="block text-muted-foreground">{item.result.error}</span>
+                          <span className="block text-muted-foreground">{t('Failed')}</span>
                         ) : null}
                       </span>
                     </li>

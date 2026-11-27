@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { SettingsLoadNotice } from './SettingsLayout'
 import { useSettingsStore } from '@/stores/settings-store'
 import type { ConnectorsView } from '@/lib/settings-navigation'
+import { MarketplaceSkeleton } from '../marketplace/MarketplaceSkeleton'
+import { ConnectorMarketplace } from './ConnectorMarketplace'
 import { ConnectorsPanel } from './ConnectorsPanel'
 import { ConnectorDetailView } from './ConnectorDetailView'
 import { ConnectorAddForm } from './ConnectorAddForm'
@@ -60,7 +62,14 @@ export function ConnectorResourcePanel({
     onNavigate({ kind: 'edit', id: referencedCustom.id })
   }, [loaded, referencedCustom, onNavigate])
   const openSettings = useSettingsStore((state) => state.openSettingsToPanel)
-  const done = (): void => onNavigate({ kind: 'list' })
+  const done = (installedId?: string): void =>
+    onNavigate(
+      view.kind === 'add' && view.marketplaceDigest
+        ? { kind: 'marketplace', installedId }
+        : { kind: 'list' }
+    )
+  if (!loaded && !failed && view.kind === 'marketplace')
+    return <MarketplaceSkeleton label={t('Loading Connectors…')} />
   if (!loaded && view.kind !== 'list')
     return (
       <div className="p-5">
@@ -77,6 +86,8 @@ export function ConnectorResourcePanel({
     )
   // Resolve a cold-catalog reference before mounting the built-in detail owner.
   if (referencedCustom) return null
+  if (view.kind === 'marketplace')
+    return <ConnectorMarketplace installedId={view.installedId} onNavigate={onNavigate} />
   if (view.kind === 'detail')
     return (
       <>
@@ -108,6 +119,7 @@ export function ConnectorResourcePanel({
           active={active}
           onLeaveStateChange={onLeaveStateChange}
           initialTransport={view.kind === 'add' ? view.transport : undefined}
+          marketplaceDigest={view.kind === 'add' ? view.marketplaceDigest : undefined}
           initialTemplate={view.kind === 'add' ? view.template : undefined}
           editServer={
             view.kind === 'edit' ? customServers.find((server) => server.id === view.id) : undefined

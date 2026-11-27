@@ -2,6 +2,10 @@ import type { TFunction } from 'i18next'
 
 export const localizeConnectorError = (message: string, t: TFunction): string => {
   switch (message) {
+    case 'Marketplace configuration changed':
+      return t('Review the Marketplace configuration again.')
+    case 'Marketplace release unavailable':
+      return t('Marketplace unavailable')
     case 'Credential changes were saved, but Connectors could not refresh. Retry from Settings > Connectors.':
       return t(
         'Credential changes were saved, but Connectors could not refresh. Retry from Settings > Connectors.'

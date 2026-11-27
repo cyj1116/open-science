@@ -1147,6 +1147,7 @@ export type CustomServerTransport = 'stdio' | 'streamable_http' | 'sse'
 
 // Renderer-safe view of one user-added custom MCP server (no secret env/header values).
 export type CustomServerView = {
+  marketplace?: import('./connector-marketplace').ConnectorMarketplaceReceipt
   id: string
   // Immutable agent-facing name used by host.mcp, Specialists, and generated MCP skills.
   name: string
@@ -1186,6 +1187,7 @@ export type CustomServerView = {
 // The connectors list plus custom servers and shared credential state, returned by list/mutation calls.
 export type ConnectorsSnapshot = {
   connectors: ConnectorView[]
+  marketplaceListings?: import('./connector-marketplace').ConnectorMarketplaceListing[]
   customServers: CustomServerView[]
   // Derived Agent Skill documents can fail independently after durable Connector settings save.
   skillProjectionStatus?: 'degraded'
@@ -1263,6 +1265,7 @@ export type DeviceCredentialAuthenticationRequest = { id: string }
 
 // Add a custom MCP server. stdio requires `command`; the remote transports require `url`.
 export type AddCustomServerRequest = {
+  marketplaceDigest?: string
   // Optional immutable local ID. Omission lets main infer one from `name` and fall back to a UUID.
   id?: string
   name: string
@@ -1358,6 +1361,7 @@ export type ExportCustomServerTemplateResult = { saved: boolean }
 // Edit an existing custom MCP server. `name` is deliberately absent because it is immutable.
 // Omitted env/headers keep the stored values; providing them replaces the set.
 export type UpdateCustomServerRequest = {
+  marketplaceUpdate?: { expectedDigest: string; digest: string }
   id: string
   displayName?: string
   description?: string

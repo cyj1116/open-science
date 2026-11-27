@@ -44,6 +44,7 @@ export type SkillMarketplaceEntry = {
 
 export type SkillMarketplaceCatalog = {
   // Transient cache hint; never part of the signed catalog or installed receipts.
+  checkedAt?: number
   revalidate?: boolean
   // The verified 64-hex catalog revision, independent of CDN/GitHub transport.
   snapshotId: string
@@ -62,6 +63,7 @@ export type SkillMarketplaceCatalogRequest = {
 export type SkillMarketplaceDetailRequest = {
   snapshotId: string
   id: string
+  previewDocument?: boolean
   previewUpdate?: boolean
 }
 export type SkillMarketplaceConflictReason = SkillReleaseConflictReason
@@ -115,6 +117,7 @@ export type SkillMarketplaceBatchStartResult =
   | { ok: true; value: SkillMarketplaceBatch }
   | { ok: false; error: 'invalid-request' | 'busy' | 'snapshot-unavailable' }
 export type SkillMarketplaceDetail = {
+  document?: string
   entry: SkillMarketplaceEntry
   licenseEvidence: { url: string; sha256: string }[]
   installation?: SkillMarketplaceInstallation

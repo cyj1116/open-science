@@ -381,7 +381,7 @@ describe('Skill Marketplace', () => {
     await click('Select all filtered results (1)')
     await click('Install…')
     expect(container.textContent).toContain('Review selection / 1')
-    expect(container.textContent).toContain('skill-2: 1.0.0+build-1')
+    expect(container.textContent).toContain('Skill 02: 1.0.0+build-1')
     expect(window.api.settings.startSkillMarketplaceBatch).not.toHaveBeenCalled()
   })
   it('shows expired verified cards immediately while revalidating in the background', async () => {
@@ -585,7 +585,7 @@ describe('Skill Marketplace', () => {
     expect(document.querySelector('[role="alertdialog"]')).toBeNull()
     await click('Retry', card)
     expect(install).toHaveBeenCalledTimes(2)
-    expect(card.textContent).toContain('integrity')
+    expect(card.textContent).toContain('Marketplace verification failed')
     expect(
       [...card.querySelectorAll('button')].some((button) => button.textContent === 'Refresh')
     ).toBe(true)
@@ -707,7 +707,7 @@ describe('Skill Marketplace', () => {
     expect(details.textContent).toContain('Quitting the app stops the queue.')
     await act(async () => details.querySelector('summary')!.click())
     expect(details.open).toBe(true)
-    expect(dialog.textContent).toContain('skill-39: 1.0.0')
+    expect(dialog.textContent).toContain('Skill 39: 1.0.0')
     await click('Cancel', dialog)
     expect(window.api.settings.startSkillMarketplaceBatch).not.toHaveBeenCalled()
     await click('Install…')
@@ -767,7 +767,7 @@ describe('Skill Marketplace', () => {
       expect(checkbox.checked).toBe(true)
       expect(card.dataset.selected).toBe('true')
       const footer = card.querySelector('[data-slot="resource-card-footer"]')
-      if (mode === 'install') expect(footer).toBeNull()
+      if (mode === 'install') expect(footer?.querySelector('button')).toBeNull()
       else expect(footer?.textContent).toContain('Update available')
       await act(async () => checkbox.closest('label')!.click())
       expect(checkbox.checked).toBe(false)
@@ -806,8 +806,8 @@ describe('Skill Marketplace', () => {
     await click('Select all filtered results (1)')
     await click('Update…')
     const dialog = document.querySelector('[data-testid="skill-marketplace-batch-confirm"]')!
-    expect(dialog.textContent).toContain('skill-1: 0.9.0 → 1.0.0')
-    expect(dialog.textContent).not.toContain('skill-0:')
+    expect(dialog.textContent).toContain('Skill 01: 0.9.0 → 1.0.0')
+    expect(dialog.textContent).not.toContain('Skill 00:')
     vi.mocked(window.api.settings.startSkillMarketplaceBatch).mockResolvedValueOnce({
       ok: false,
       error: 'snapshot-unavailable'
@@ -817,7 +817,7 @@ describe('Skill Marketplace', () => {
       snapshotId: marketplaceCatalog.snapshotId,
       items: [{ id: 'skill-1', version: '1.0.0', expectedVersion: '0.9.0' }]
     })
-    expect(container.textContent).toContain('snapshot-unavailable')
+    expect(container.textContent).toContain('Could not start batch installation.')
     expect(container.textContent).toContain('1 selected')
   })
   it('separates selection from modes and preserves it only across sorting and loading more', async () => {
@@ -1132,7 +1132,7 @@ describe('Skill Marketplace', () => {
     await select('Installation status', 'All')
     expect(container.querySelector('[data-skill-id="skill-0"]')?.textContent).toContain('Installed')
     expect(container.querySelector('[data-skill-id="skill-2"]')?.textContent).toContain(
-      'Local conflict'
+      'Needs attention'
     )
     expect(install).not.toHaveBeenCalled()
   })
@@ -1209,7 +1209,7 @@ describe('Skill Marketplace', () => {
       root.render(<SkillMarketplace view={{ kind: 'marketplace' }} onNavigate={onNavigate} />)
     )
     const card = container.querySelector('article')!
-    expect(card.textContent).toContain('Local conflict')
+    expect(card.textContent).toContain('Needs attention')
     await click('View details', card)
     expect(onNavigate).toHaveBeenCalledWith(detailView)
     expect(install).not.toHaveBeenCalled()
@@ -1350,10 +1350,6 @@ describe('Skill Marketplace', () => {
       )
     )
     expect(container.textContent).toContain('Skill installation blocked')
-    const diagnostics = [...container.querySelectorAll('details')].find(
-      (node) => node.querySelector('summary')?.textContent === 'Details'
-    )!
-    expect(diagnostics.open).toBe(false)
     await click('Manage local skills')
     expect(onManageLocal).toHaveBeenCalledOnce()
     detail.mockResolvedValueOnce({
@@ -1503,8 +1499,7 @@ describe('Skill Marketplace', () => {
         root.render(<SkillMarketplace view={{ kind: 'marketplace' }} onNavigate={vi.fn()} />)
       )
       const card = container.querySelector('[data-slot="skill-marketplace-card"]')!
-      expect(card.querySelector(`[title="${owner}"]`)?.textContent).toBe(owner)
-      expect(card.textContent).not.toContain('AIPOCH')
+      expect(card.textContent).toContain(`AIPOCH · ${owner}`)
       expect(entry.authors).toBeUndefined()
     }
   )
@@ -1522,7 +1517,9 @@ describe('Skill Marketplace', () => {
     await act(async () =>
       root.render(<SkillMarketplace view={{ kind: 'marketplace' }} onNavigate={vi.fn()} />)
     )
-    expect(container.querySelector('[title="Ada, Grace"]')?.textContent).toBe('Ada, Grace')
+    expect(container.querySelector('[title="AIPOCH · Ada, Grace"]')?.textContent).toBe(
+      'AIPOCH · Ada, Grace'
+    )
     for (const authors of [entry.authors, undefined, []]) {
       const candidate = { ...entry, authors }
       expect(filterSkillMarketplace([candidate], ' NVIDIA ', 'all', 'name', 'en')).toEqual([

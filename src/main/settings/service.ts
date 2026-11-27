@@ -351,7 +351,7 @@ export type SettingsServiceOptions = {
 // object shared by the settings IPC handlers and the ACP runtime. Secrets are decrypted here only
 // transiently; nothing that leaves this object (views, spawn config aside) carries plaintext.
 class SettingsService {
-  private readonly skillMarketplace = new SkillMarketplaceService(netFetchWithManualRedirect)
+  private readonly skillMarketplace: SkillMarketplaceService
   private readonly skillMarketplaceQueue = new SkillMarketplaceInstallQueue({
     retainSnapshot: (request) => this.skillMarketplace.retainSnapshot(request),
     install: (request, signal) => this.performSkillMarketplaceInstall(request, false, signal),
@@ -397,6 +397,7 @@ class SettingsService {
           .string()
           .max(128)
           .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+        previewDocument: z.boolean().optional(),
         previewUpdate: z.boolean().optional()
       })
       .safeParse(request)
@@ -404,6 +405,15 @@ class SettingsService {
     const identity = { snapshotId: parsed.data.snapshotId, id: parsed.data.id }
     const result = await this.skillMarketplace.detail(identity)
     if (!result.ok) return result
+    if (parsed.data.previewDocument) {
+      const downloaded = await this.skillMarketplace.download(identity)
+      if (!downloaded.ok) return downloaded
+      const file = downloaded.value.files.find((file) => file.relativePath === 'SKILL.md')!
+      return {
+        ok: true,
+        value: { ...result.value, document: new TextDecoder().decode(file.content) }
+      }
+    }
     let updatePreview: SkillMarketplaceDetail['updatePreview']
     if (parsed.data.previewUpdate) {
       const downloaded = await this.skillMarketplace.download(identity)
@@ -574,6 +584,10 @@ class SettingsService {
 
   constructor(options: SettingsServiceOptions = {}) {
     this.configRoot = options.configRoot ?? resolveConfigRoot()
+    this.skillMarketplace = new SkillMarketplaceService(
+      netFetchWithManualRedirect,
+      join(this.configRoot, 'cache', 'skill-marketplace.json')
+    )
     this.skillSources = new SkillSourceRepository(this.configRoot)
     this.installCoordinator = options.installCoordinator ?? new SettingsInstallCoordinator()
     this.repository = options.repository ?? new SettingsRepository(this.configRoot)

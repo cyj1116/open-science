@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { verify } from 'node:crypto'
 import { zipSync } from 'fflate'
@@ -244,6 +247,35 @@ describe('verified Skill Marketplace browsing', () => {
     })
     expect(fetch).not.toHaveBeenCalled()
   })
+  it('reopens a signed catalog offline and rejects a modified persisted root', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'skill-marketplace-cache-'))
+    const path = join(directory, 'catalog.json')
+    try {
+      expect((await new SkillMarketplaceService(transport(), path).list()).ok).toBe(true)
+      const offline = vi.fn<typeof fetch>().mockRejectedValue(new Error('offline'))
+      const restarted = new SkillMarketplaceService(offline, path)
+      expect(await restarted.list({ snapshotId: root.revision })).toMatchObject({
+        ok: true,
+        value: { entries: [expect.anything()] }
+      })
+      expect(offline).not.toHaveBeenCalled()
+      await writeFile(
+        path,
+        JSON.stringify({
+          root: Buffer.from('{}').toString('base64'),
+          signature: signature.toString('base64'),
+          checkedAt: Date.now()
+        })
+      )
+      expect(await new SkillMarketplaceService(offline, path).list()).toEqual({
+        ok: false,
+        error: 'network'
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('reuses verified metadata for five minutes and revalidates only the signed CDN pair for an unchanged revision', async () => {
     vi.useFakeTimers()
     const fetch = transport()

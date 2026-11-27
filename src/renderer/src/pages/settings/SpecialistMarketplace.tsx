@@ -1,3 +1,8 @@
+import { MarketplaceEmptyState } from '../marketplace/MarketplaceEmptyState'
+import { connectorDescription } from './connector-copy'
+import { MarketplaceSkeleton } from '../marketplace/MarketplaceSkeleton'
+import { MarketplaceFilters } from '../marketplace/MarketplaceFilters'
+import { matchesMarketplaceFilters, type FilterListing } from '../marketplace/marketplace-filters'
 import { ResourceDetailActions, ResourceDetailHeader } from '../marketplace/ResourceDetailLayout'
 import { Users } from 'lucide-react'
 import type { SpecialistMarketplaceView } from '../../lib/settings-navigation'
@@ -71,7 +76,9 @@ import {
 } from '../marketplace/ResourceCenterModeTabs'
 import {
   ResourceMarketplaceIdentity,
-  ResourceMarketplaceCardContent
+  MarketplaceTrustBadge,
+  marketplaceGridClassName,
+  ResourceMarketplaceCard
 } from '../marketplace/ResourceMarketplaceIdentity'
 import { ConnectorsNavIcon } from './connector-icons'
 import { SpecialistSkillConflictChoices } from './SpecialistSkillConflictChoices'
@@ -104,11 +111,6 @@ const formatBytes = (value: number): string => {
 
 type MarketplacePresentationStatus =
   'available' | 'installed' | 'update-available' | 'setup-incomplete'
-
-// Browse-view filter chips. Deliberately limited to fields the signed registry schema already
-// carries: trust and derived install state. A category chip row would need a new signed field,
-// which .strict() protocol schemas make a one-way breaking change for older app versions.
-type MarketplaceFilter = 'all' | 'official' | 'community' | 'updates'
 
 const marketplaceListingKey = (item: MarketplaceSpecialistListing): string =>
   `${item.sourceId}:${item.id}`
@@ -175,7 +177,18 @@ const SpecialistMarketplace = ({
     typeof window.api.specialist?.prepareMarketplaceInstall === 'function'
   const [uninstallArmedKey, setUninstallArmedKey] = useState<string>()
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<MarketplaceFilter>('all')
+  const [source, setSource] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [sort, setSort] = useState('name')
+  const [visibleCount, setVisibleCount] = useState(36)
+  const installedName = view.kind === 'marketplace' ? view.installedId : undefined
+  const [releaseRetry, setReleaseRetry] = useState(0)
+  const resetFilters = (): void => {
+    setSource('all')
+    setStatusFilter('all')
+    setSort('name')
+    setVisibleCount(36)
+  }
   const [repositoryUrl, setRepositoryUrl] = useState('')
   const [sourceFormOpen, setSourceFormOpen] = useState(false)
   const sourceInput = useRef<HTMLInputElement>(null)
@@ -205,7 +218,9 @@ const SpecialistMarketplace = ({
   const [skillConflictResolutions, setSkillConflictResolutions] =
     useState<SkillConflictResolutionMap>({})
   const sourceCandidateTokenRef = useRef<string | undefined>(undefined)
+  const downloadToken = useRef<string>(undefined)
   const installCandidateTokenRef = useRef<string | undefined>(undefined)
+  const connectors = useSettingsStore((state) => state.connectors)
   const installedSpecialists = useSpecialistStore((state) => state.items)
   const dialogRemovalSource = useRetainedDialogValue(sourcePendingRemoval)
   const sourceRemovalAffectedSpecialists = dialogRemovalSource
@@ -239,6 +254,7 @@ const SpecialistMarketplace = ({
   useEffect(
     () => () => {
       cancelCandidate(sourceCandidateTokenRef.current)
+      cancelCandidate(downloadToken.current)
       cancelCandidate(installCandidateTokenRef.current)
       sourceCandidateTokenRef.current = undefined
       installCandidateTokenRef.current = undefined
@@ -288,34 +304,23 @@ const SpecialistMarketplace = ({
     return statuses
   }, [installedSpecialists, snapshot])
 
-  const filterCounts = useMemo(() => {
-    const counts = { all: 0, official: 0, community: 0, updates: 0 }
-    for (const item of snapshot?.specialists ?? []) {
-      counts.all += 1
-      if (item.sourceTrust === 'official') counts.official += 1
-      else counts.community += 1
-      if (statusByKey.get(marketplaceListingKey(item)) === 'update-available') counts.updates += 1
-    }
-    return counts
-  }, [snapshot, statusByKey])
-
-  const visibleListings = useMemo(() => {
-    const term = query.trim().toLowerCase()
-    return (snapshot?.specialists ?? []).filter((item) => {
-      if (filter === 'official' && item.sourceTrust !== 'official') return false
-      if (filter === 'community' && item.sourceTrust !== 'user-approved') return false
-      if (
-        filter === 'updates' &&
-        statusByKey.get(marketplaceListingKey(item)) !== 'update-available'
-      )
-        return false
-      if (!term) return true
-      return [item.displayName, item.summary, item.publisher.name, item.sourceName]
+  const listings = snapshot?.specialists ?? []
+  const facet = (item: MarketplaceSpecialistListing): FilterListing => ({
+    official: item.sourceTrust === 'official',
+    installed: Boolean(item.installedVersion),
+    update: Boolean(item.updateAvailable)
+  })
+  const term = query.trim().toLowerCase()
+  const visibleListings = listings.filter(
+    (item) =>
+      matchesMarketplaceFilters(facet(item), source, statusFilter) &&
+      [item.displayName, item.summary, item.publisher.name, item.author, item.sourceName]
         .join(' ')
         .toLowerCase()
         .includes(term)
-    })
-  }, [filter, query, snapshot, statusByKey])
+  )
+  if (sort === 'name') visibleListings.sort((a, b) => a.displayName.localeCompare(b.displayName))
+  const filtered = source !== 'all' || statusFilter !== 'all'
 
   // The newest per-source refresh timestamp answers "how old is the data on screen", covering both
   // the TTL-hit case (a few minutes ago) and a just-completed network refresh (now).
@@ -434,17 +439,22 @@ const SpecialistMarketplace = ({
     setInstallError(undefined)
     setInstallErrorCode(undefined)
     const currentPreview = selection ? undefined : installPreview
-    if (!currentPreview) setDownloadProgress(undefined)
+    if (!currentPreview) {
+      setDownloadProgress(undefined)
+      downloadToken.current = crypto.randomUUID()
+    }
     try {
       const preview =
         currentPreview ??
         (await window.api.specialist.prepareMarketplaceInstall({
+          downloadToken: downloadToken.current,
           sourceId: view.sourceId,
           specialistId: view.id,
           version: view.version,
           selectedSkillIds: selection?.skillIds ?? [...selectedSkillIds],
           selectedConnectorIds: selection?.connectorIds ?? [...selectedConnectorIds]
         }))
+      downloadToken.current = undefined
       const preparedNow = !currentPreview
       if (preparedNow) {
         installCandidateTokenRef.current = preview.package.candidateToken
@@ -503,12 +513,13 @@ const SpecialistMarketplace = ({
         return
       }
       await refreshMarketplace()
-      onNavigate({ kind: 'list' })
+      onNavigate({ kind: 'marketplace', installedId: view.id })
     } catch {
       setDownloadProgress(undefined)
       setInstallErrorCode(undefined)
       setInstallError(t('Could not install this Specialist.'))
     } finally {
+      downloadToken.current = undefined
       installInFlight.current = false
       setInstallBusy(false)
     }
@@ -569,7 +580,7 @@ const SpecialistMarketplace = ({
     return () => {
       active = false
     }
-  }, [t, view])
+  }, [t, view, releaseRetry])
 
   const marketplaceSkillConflicts = specialistSkillConflicts(
     installPreview?.package.summary?.skills
@@ -937,7 +948,10 @@ const SpecialistMarketplace = ({
           {releaseLoading ? <MarketplaceLoading label={t('Loading…')} /> : null}
           {releaseError ? (
             <div>
-              <MarketplaceError message={releaseError} />
+              <MarketplaceError
+                message={releaseError}
+                retry={() => setReleaseRetry((n) => n + 1)}
+              />
             </div>
           ) : null}
           {release ? (
@@ -965,12 +979,9 @@ const SpecialistMarketplace = ({
                 </span>
                 <span>{formatBytes(release.compressedBytes)}</span>
                 {view.sourceName ? <span>{view.sourceName}</span> : null}
-                {view.sourceTrust === 'official' ? (
-                  <span className="inline-flex items-center gap-1 text-primary">
-                    <BadgeCheck className="size-3.5" aria-hidden="true" />
-                    {t('Official')}
-                  </span>
-                ) : null}
+                {view.sourceTrust && (
+                  <MarketplaceTrustBadge official={view.sourceTrust === 'official'} />
+                )}
               </ResourceDetailHeader>
               <ResourceDetailActions>
                 <Button
@@ -1026,6 +1037,18 @@ const SpecialistMarketplace = ({
                       </span>
                     ) : null}
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      cancelCandidate(downloadToken.current)
+                      downloadToken.current = undefined
+                      viewKeyRef.current = undefined
+                      onNavigate({ kind: 'marketplace' })
+                    }}
+                  >
+                    {t('Cancel')}
+                  </Button>
                   <div
                     role="progressbar"
                     aria-label={t('Marketplace download progress')}
@@ -1132,32 +1155,50 @@ const SpecialistMarketplace = ({
                   {connectorsExpanded ? (
                     release.connectors.length ? (
                       <ul className="divide-y divide-border border-t border-border px-4">
-                        {release.connectors.map((connector) => (
-                          <li key={connector.id} className="flex items-center gap-3 py-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedConnectorIds.has(connector.id)}
-                              disabled={connector.required || installBusy}
-                              aria-label={t('Select {{name}}', { name: connector.id })}
-                              className="size-4 accent-primary disabled:cursor-not-allowed disabled:opacity-50"
-                              onChange={(event) => {
-                                invalidateInstallPreview()
-                                setSelectedConnectorIds((current) => {
-                                  const next = new Set(current)
-                                  if (event.target.checked) next.add(connector.id)
-                                  else next.delete(connector.id)
-                                  return next
-                                })
-                              }}
-                            />
-                            <span className="text-sm text-foreground">{connector.id}</span>
-                            {connector.required ? (
-                              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                                {t('Required')}
+                        {release.connectors.map((connector) => {
+                          const meta =
+                            connector.displayName && connector.description
+                              ? {
+                                  id: connector.id,
+                                  displayName: connector.displayName,
+                                  description: connector.description
+                                }
+                              : connectors.find((item) => item.id === connector.id)
+                          const name = meta?.displayName ?? t('Unavailable Connector')
+                          return (
+                            <li key={connector.id} className="flex items-center gap-3 py-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedConnectorIds.has(connector.id)}
+                                disabled={connector.required || installBusy}
+                                aria-label={t('Select {{name}}', { name })}
+                                className="size-4 accent-primary disabled:cursor-not-allowed disabled:opacity-50"
+                                onChange={(event) => {
+                                  invalidateInstallPreview()
+                                  setSelectedConnectorIds((current) => {
+                                    const next = new Set(current)
+                                    if (event.target.checked) next.add(connector.id)
+                                    else next.delete(connector.id)
+                                    return next
+                                  })
+                                }}
+                              />
+                              <span className="text-sm text-foreground">
+                                {name}
+                                {meta && (
+                                  <small className="block text-muted-foreground">
+                                    {connectorDescription(meta, t)}
+                                  </small>
+                                )}
                               </span>
-                            ) : null}
-                          </li>
-                        ))}
+                              {connector.required ? (
+                                <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                                  {t('Required')}
+                                </span>
+                              ) : null}
+                            </li>
+                          )
+                        })}
                       </ul>
                     ) : (
                       <p className="border-t border-border p-4 text-xs text-muted-foreground">
@@ -1282,16 +1323,19 @@ const SpecialistMarketplace = ({
           actions={addAction}
           toolbar={
             <ResourceCatalogToolbar
-              onResetFilters={() => {
-                setFilter('all')
-              }}
-              activeFilterCount={Number(filter !== 'all')}
+              onResetFilters={resetFilters}
+              activeFilterCount={
+                Number(source !== 'all') + Number(statusFilter !== 'all') + Number(sort !== 'name')
+              }
               search={
                 <SettingsSearchInput
                   aria-label={t('Search Marketplace')}
                   placeholder={t('Search Marketplace…')}
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value)
+                    setVisibleCount(36)
+                  }}
                 />
               }
               trailing={
@@ -1302,6 +1346,11 @@ const SpecialistMarketplace = ({
                       aria-live="polite"
                       className="ml-auto flex min-h-4 items-center gap-1.5 text-xs text-muted-foreground"
                     >
+                      {t('Results: {{results}} / {{total}}', {
+                        results: visibleListings.length,
+                        total: listings.length
+                      })}{' '}
+                      ·
                       {isRefreshing ? (
                         <>
                           <Loader2
@@ -1341,36 +1390,38 @@ const SpecialistMarketplace = ({
               }
             >
               {snapshot && snapshot.specialists.length > 0 ? (
-                <ResourceCatalogFilter label={t('Category')}>
-                  <Select
-                    value={filter}
-                    onValueChange={(value) => setFilter(value as MarketplaceFilter)}
-                  >
-                    <SelectTrigger
-                      aria-label={t('Filter Marketplace Specialists')}
-                      className="w-44"
+                <>
+                  <MarketplaceFilters
+                    entries={listings.map(facet)}
+                    source={source}
+                    status={statusFilter}
+                    onSource={(value) => {
+                      setSource(value)
+                      setVisibleCount(36)
+                    }}
+                    onStatus={(value) => {
+                      setStatusFilter(value)
+                      setVisibleCount(36)
+                    }}
+                  />
+                  <ResourceCatalogFilter label={t('Sort by')}>
+                    <Select
+                      value={sort}
+                      onValueChange={(value) => {
+                        setSort(value)
+                        setVisibleCount(36)
+                      }}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(
-                        [
-                          ['all', t('All'), filterCounts.all],
-                          ['official', t('Official'), filterCounts.official],
-                          ['community', t('Community'), filterCounts.community],
-                          ...(filterCounts.updates > 0 || filter === 'updates'
-                            ? [['updates', t('Updates available'), filterCounts.updates] as const]
-                            : [])
-                        ] as const
-                      ).map(([key, label, count]) => (
-                        <SelectItem key={key} value={key}>
-                          {label}
-                          <span className="ml-2 tabular-nums text-muted-foreground">{count}</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </ResourceCatalogFilter>
+                      <SelectTrigger aria-label={t('Sort by')} className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="name">{t('Name A–Z')}</SelectItem>
+                        <SelectItem value="manifest">{t('Catalog order')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </ResourceCatalogFilter>
+                </>
               ) : null}
             </ResourceCatalogToolbar>
           }
@@ -1385,8 +1436,13 @@ const SpecialistMarketplace = ({
           />
         </ResourceCatalogHeader>
 
+        {installedName && (
+          <Button variant="link" onClick={() => onNavigate({ kind: 'edit', id: installedName })}>
+            {t('View installed Specialist')}
+          </Button>
+        )}
         {uninstallError ? <MarketplaceError message={uninstallError} /> : null}
-        {loading ? <MarketplaceLoading label={t('Loading Marketplace…')} /> : null}
+        {loading ? <MarketplaceSkeleton label={t('Loading Marketplace…')} /> : null}
         {!loading && !snapshot && lastRefreshFailed ? (
           <MarketplaceError
             message={
@@ -1437,38 +1493,38 @@ const SpecialistMarketplace = ({
           ? snapshot?.failures.map((failure) => (
               <div key={failure.sourceId} className="mb-3">
                 <MarketplaceError
-                  message={t('Could not refresh {{source}}', { source: failure.sourceName })}
+                  retry={() => void refreshMarketplace({ forceRefresh: true })}
+                  message={[
+                    t('Could not refresh {{source}}', { source: failure.sourceName }),
+                    failure.code === 'verification' || failure.code === 'schema'
+                      ? t('Marketplace verification failed')
+                      : t('Marketplace unavailable')
+                  ].join(' · ')}
                 />
               </div>
             ))
           : null}
         {!loading && snapshot && !allSourcesUnavailable && visibleListings.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-6 text-center">
-            <p className="text-sm text-foreground">
-              {query
+          <MarketplaceEmptyState
+            message={
+              query
                 ? t('No Specialists match “{{query}}”.', { query })
-                : filter !== 'all'
+                : filtered
                   ? t('No Specialists match this filter.')
-                  : t('No Marketplace Specialists available.')}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-3"
-              onClick={() => {
-                if (query) setQuery('')
-                else if (filter !== 'all') setFilter('all')
-                else onNavigate({ kind: 'marketplace-sources' })
-              }}
-            >
-              {query ? t('Clear search') : filter !== 'all' ? t('Show all') : t('Manage sources')}
-            </Button>
-          </div>
+                  : t('No Marketplace Specialists available.')
+            }
+            action={query || filtered ? t('Clear all') : t('Manage sources')}
+            onAction={() => {
+              if (query || filtered) {
+                setQuery('')
+                resetFilters()
+              } else onNavigate({ kind: 'marketplace-sources' })
+            }}
+          />
         ) : null}
         {!loading && visibleListings.length ? (
-          <ul className="resource-marketplace-grid grid grid-cols-[repeat(auto-fill,minmax(min(100%,19rem),1fr))] gap-3">
-            {visibleListings.map((item) => {
+          <ul className={marketplaceGridClassName}>
+            {visibleListings.slice(0, visibleCount).map((item) => {
               const status = statusByKey.get(marketplaceListingKey(item)) ?? ('available' as const)
               const opensDetails = status === 'available' || status === 'update-available'
               const installed = installedSpecialists.find((specialist) => specialist.id === item.id)
@@ -1490,6 +1546,7 @@ const SpecialistMarketplace = ({
                   kind: 'marketplace-release',
                   sourceId: item.sourceId,
                   sourceName: item.sourceName,
+                  displayName: item.displayName,
                   sourceTrust: item.sourceTrust,
                   id: item.id,
                   version: item.version,
@@ -1499,84 +1556,90 @@ const SpecialistMarketplace = ({
                 })
               }
               return (
-                <li
+                <ResourceMarketplaceCard
                   key={marketplaceListingKey(item)}
-                  className="resource-marketplace-card flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4 text-card-foreground transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-sm motion-reduce:transition-none"
-                >
-                  <ResourceMarketplaceCardContent
-                    id={item.id}
-                    name={item.displayName}
-                    publisher={item.publisher.name}
-                    summary={item.summary}
-                    onOpen={() => navigate()}
-                    primaryAction={
-                      <Button
-                        type="button"
-                        variant={uninstallArmed ? 'destructive' : 'outline'}
-                        size="sm"
-                        className="skill-marketplace-install-action shrink-0"
-                        data-installed={status === 'installed' && !uninstallArmed}
-                        aria-live="polite"
-                        disabled={
-                          uninstallBusy ||
-                          (status === 'installed' && !canUninstall) ||
-                          (opensDetails && !canInstallSpecialist)
+                  id={item.id}
+                  name={item.displayName}
+                  publisher={item.publisher.name}
+                  author={item.author}
+                  version={item.version}
+                  source={item.sourceName}
+                  official={item.sourceTrust === 'official'}
+                  summary={item.summary}
+                  onOpen={() => navigate()}
+                  primaryAction={
+                    <Button
+                      type="button"
+                      variant={uninstallArmed ? 'destructive' : 'outline'}
+                      size="sm"
+                      className="skill-marketplace-install-action shrink-0"
+                      data-installed={status === 'installed' && !uninstallArmed}
+                      aria-live="polite"
+                      disabled={
+                        uninstallBusy ||
+                        (status === 'installed' && !canUninstall) ||
+                        (opensDetails && !canInstallSpecialist)
+                      }
+                      onPointerEnter={(event) => {
+                        if (event.pointerType === 'mouse' && canUninstall) setUninstallArmedKey(key)
+                      }}
+                      onPointerLeave={(event) => {
+                        if (event.pointerType === 'mouse') setUninstallArmedKey(undefined)
+                      }}
+                      onFocus={(event) => {
+                        if (canUninstall && event.currentTarget.matches(':focus-visible'))
+                          setUninstallArmedKey(key)
+                      }}
+                      onBlur={() => setUninstallArmedKey(undefined)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape' && uninstallArmed) {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          setUninstallArmedKey(undefined)
                         }
-                        onPointerEnter={(event) => {
-                          if (event.pointerType === 'mouse' && canUninstall)
-                            setUninstallArmedKey(key)
-                        }}
-                        onPointerLeave={(event) => {
-                          if (event.pointerType === 'mouse') setUninstallArmedKey(undefined)
-                        }}
-                        onFocus={(event) => {
-                          if (canUninstall && event.currentTarget.matches(':focus-visible'))
-                            setUninstallArmedKey(key)
-                        }}
-                        onBlur={() => setUninstallArmedKey(undefined)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Escape' && uninstallArmed) {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            setUninstallArmedKey(undefined)
-                          }
-                        }}
-                        onClick={() => {
-                          if (canUninstall) {
-                            if (uninstallArmed) onUninstall?.(item.id)
-                            else setUninstallArmedKey(key)
-                          } else navigate(true)
-                        }}
-                      >
-                        {status === 'installed' ? (
-                          uninstallArmed ? (
-                            <Trash2 className="size-4" aria-hidden="true" />
-                          ) : (
-                            <CheckCircle2 className="size-4" aria-hidden="true" />
-                          )
-                        ) : null}
-                        {status === 'installed'
-                          ? t(uninstallArmed ? 'Uninstall' : 'Installed')
-                          : status === 'setup-incomplete'
-                            ? t('Finish setup')
-                            : status === 'update-available'
-                              ? t('Update')
-                              : t('Install')}
-                      </Button>
-                    }
-                    status={
-                      status === 'update-available'
-                        ? t('Update available')
+                      }}
+                      onClick={() => {
+                        if (canUninstall) {
+                          if (uninstallArmed) onUninstall?.(item.id)
+                          else setUninstallArmedKey(key)
+                        } else navigate(true)
+                      }}
+                    >
+                      {status === 'installed' ? (
+                        uninstallArmed ? (
+                          <Trash2 className="size-4" aria-hidden="true" />
+                        ) : (
+                          <CheckCircle2 className="size-4" aria-hidden="true" />
+                        )
+                      ) : null}
+                      {status === 'installed'
+                        ? t(uninstallArmed ? 'Uninstall' : 'Installed')
                         : status === 'setup-incomplete'
-                          ? t('Setup incomplete')
+                          ? t('Finish setup')
+                          : status === 'update-available'
+                            ? t('Update', { context: 'verb' })
+                            : t('Install')}
+                    </Button>
+                  }
+                  status={
+                    status === 'update-available'
+                      ? 'update'
+                      : status === 'setup-incomplete'
+                        ? 'attention'
+                        : status === 'installed'
+                          ? 'installed'
                           : undefined
-                    }
-                  />
-                </li>
+                  }
+                />
               )
             })}
           </ul>
         ) : null}
+        {visibleCount < visibleListings.length && (
+          <Button variant="outline" onClick={() => setVisibleCount((n) => n + 36)}>
+            {t('Load more')}
+          </Button>
+        )}
       </div>
       {sourceDrawer}
     </TooltipProvider>

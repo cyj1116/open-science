@@ -418,7 +418,6 @@ const SkillsPanel = ({
         view={view}
         addAction={addAction}
         onNavigate={onNavigate}
-        onImportFromGitHub={() => onNavigate({ kind: 'import' })}
         onManageLocal={(id) => {
           if (id) onNavigate({ kind: 'detail', id })
           else onNavigate({ kind: 'list' })

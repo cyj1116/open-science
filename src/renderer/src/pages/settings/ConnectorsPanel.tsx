@@ -566,7 +566,7 @@ export function ConnectorsPanel({
 
   if (!hasCachedCatalog && catalogState !== 'ready') {
     return (
-      <ResourceCatalogPending title={t('Connectors')} icon={ConnectorsNavIcon} marketplaceHidden>
+      <ResourceCatalogPending title={t('Connectors')} icon={ConnectorsNavIcon}>
         <SettingsLoadNotice
           state={catalogState === 'error' ? 'error' : 'loading'}
           loadingLabel={t('Loading Connectors…')}
@@ -756,8 +756,9 @@ export function ConnectorsPanel({
       >
         <ResourceCenterModeTabs
           value="installed"
-          onChange={() => {}}
-          marketplaceHidden
+          onChange={(mode) => {
+            if (mode === 'marketplace') onNavigate({ kind: 'marketplace' })
+          }}
           count={connectors.length + customServers.length}
         />
       </ResourceCatalogHeader>
@@ -863,6 +864,10 @@ export function ConnectorsPanel({
                             identity={<ConnectorGlyph size={40} />}
                             name={server.displayName}
                             summary={server.description || server.name}
+                            attribution={
+                              server.marketplace &&
+                              [server.marketplace.source, server.marketplace.version].join(' · ')
+                            }
                             onOpen={() => onNavigate({ kind: 'edit', id: server.id })}
                           />
                           <div className="min-w-0">

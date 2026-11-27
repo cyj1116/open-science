@@ -1,3 +1,7 @@
+import {
+  connectorMarketplaceListings,
+  reviewConnectorMarketplaceInstall
+} from '../connectors/marketplace/service'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { BootstrapError } from '../../shared/bootstrap'
@@ -735,6 +739,10 @@ class ConnectorSettingsModule {
     }
     await this.validateStaticCredentialBindings(request.envCredentialIds, 'env')
     await this.validateStaticCredentialBindings(request.headerCredentialIds, 'header')
+    const marketplace =
+      request.marketplaceDigest !== undefined
+        ? reviewConnectorMarketplaceInstall(request)
+        : undefined
     const inferredId = inferResourceId(name)
     const usedIds = new Set([
       ...CONNECTOR_CATALOG.map((connector) => connector.id),
@@ -750,7 +758,8 @@ class ConnectorSettingsModule {
       name,
       displayName,
       transport: request.transport,
-      enabled: !sharedOAuth || Boolean(sharedOAuth.state?.tokens?.access_token),
+      ...(marketplace ? { marketplace } : {}),
+      enabled: !marketplace && (!sharedOAuth || Boolean(sharedOAuth.state?.tokens?.access_token)),
       ...(request.description?.trim() ? { description: request.description.trim() } : {}),
       ...(request.command?.trim() ? { command: request.command.trim() } : {}),
       ...(request.args && request.args.length > 0 ? { args: request.args } : {}),
@@ -1006,7 +1015,28 @@ class ConnectorSettingsModule {
     const nextArgs =
       request.args ??
       (request.transport === 'stdio' && existing.transport === 'stdio' ? existing.args : undefined)
+    let marketplace = existing.marketplace
+    if (request.marketplaceUpdate) {
+      if (
+        !marketplace ||
+        marketplace.digest !== request.marketplaceUpdate.expectedDigest ||
+        nextOAuth
+      )
+        throw new Error('Marketplace configuration changed')
+      marketplace = reviewConnectorMarketplaceInstall({
+        name: existing.name,
+        displayName,
+        transport: request.transport,
+        command: request.command,
+        args: nextArgs,
+        url: request.url,
+        envCredentialIds: envRefs,
+        headerCredentialIds: headerRefs,
+        marketplaceDigest: request.marketplaceUpdate.digest
+      })
+    }
     const merged: StoredCustomMcpServer = {
+      ...(marketplace ? { marketplace } : {}),
       id: existing.id,
       name: existing.name,
       displayName,
@@ -1279,6 +1309,7 @@ class ConnectorSettingsModule {
           id: server.id,
           name: server.name,
           displayName: server.displayName,
+          ...(server.marketplace ? { marketplace: server.marketplace } : {}),
           description: server.description,
           transport: server.transport,
           enabled: server.enabled,
@@ -1332,6 +1363,7 @@ class ConnectorSettingsModule {
     return {
       connectors: this.toConnectorViews(connectors),
       customServers: this.toCustomServerViews(connectors),
+      marketplaceListings: connectorMarketplaceListings(),
       ...(this.customServerRuntimeProjectionProvider.isDegraded?.()
         ? { skillProjectionStatus: 'degraded' as const }
         : {}),

@@ -165,6 +165,9 @@ export const settingsRetryConnectorProjectionContracts = {
     'settings:retry-connector-projection',
     LOCAL
   ]),
+  'settings.testCustomServer': callable<
+    (request: { id: string }) => Promise<{ success: boolean; code: string }>
+  >()('settings', ['settings:test-custom-server', LOCAL]),
   'settings.retryCustomServer': callable<
     (request: AuthenticateCustomServerRequest) => Promise<ConnectorsSnapshot>
   >()('settings', ['settings:retry-custom-server', LOCAL]),

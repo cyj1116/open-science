@@ -15,9 +15,9 @@ import type { SpecialistListItem } from '../../../../shared/specialist'
 let container: HTMLDivElement
 let root: Root
 
-const openFilter = async (): Promise<void> => {
+const openFilter = async (dimension = 'Resource source'): Promise<void> => {
   await act(async () => {
-    fireEvent.keyDown(container.querySelector('[aria-label="Filter Marketplace Specialists"]')!, {
+    fireEvent.keyDown(container.querySelector(`[aria-label="${dimension}"]`)!, {
       key: 'Enter'
     })
   })
@@ -26,8 +26,8 @@ const filterOption = (label: string): HTMLElement =>
   Array.from(document.body.querySelectorAll<HTMLElement>('[role="option"]')).find((option) =>
     option.textContent?.startsWith(label)
   )!
-const selectFilter = async (label: string): Promise<void> => {
-  await openFilter()
+const selectFilter = async (label: string, dimension?: string): Promise<void> => {
+  await openFilter(dimension)
   await act(async () => {
     fireEvent.click(filterOption(label))
   })
@@ -147,7 +147,7 @@ describe('Specialist Marketplace settings', () => {
 
     const loading = container.querySelector('[role="status"]')
     expect(loading?.textContent).toContain('Loading Marketplace…')
-    expect(loading?.querySelector('.animate-spin')).not.toBeNull()
+    expect(loading?.querySelector('.animate-pulse')).not.toBeNull()
 
     await act(async () => {
       pending.resolve({
@@ -198,6 +198,7 @@ describe('Specialist Marketplace settings', () => {
     fireEvent.click(listing!)
     expect(onNavigate).toHaveBeenCalledWith({
       kind: 'marketplace-release',
+      displayName: 'Example Specialist',
       sourceId: 'github-example',
       sourceName: 'Example Marketplace',
       sourceTrust: 'user-approved',
@@ -247,6 +248,7 @@ describe('Specialist Marketplace settings', () => {
       )
     )
     expect(window.api.specialist.prepareMarketplaceInstall).toHaveBeenCalledExactlyOnceWith({
+      downloadToken: expect.any(String),
       sourceId: 'github-example',
       specialistId: 'example-specialist',
       version: '1.0.0',
@@ -276,7 +278,10 @@ describe('Specialist Marketplace settings', () => {
       candidateToken: 'card-candidate',
       skillConflictResolutions: []
     })
-    expect(onNavigate).toHaveBeenLastCalledWith({ kind: 'list' })
+    expect(onNavigate).toHaveBeenLastCalledWith({
+      kind: 'marketplace',
+      installedId: 'example-specialist'
+    })
     expect(useMarketplaceStore.getState().snapshot?.specialists[0].installedVersion).toBe('1.0.0')
   })
 
@@ -323,7 +328,6 @@ describe('Specialist Marketplace settings', () => {
     expect(filterOption('All').textContent).toContain('2')
     expect(filterOption('Official').textContent).toContain('1')
     expect(filterOption('Community').textContent).toContain('1')
-    expect(filterOption('Updates available').textContent).toContain('1')
     await act(async () => {
       fireEvent.click(filterOption('All'))
     })
@@ -335,10 +339,11 @@ describe('Specialist Marketplace settings', () => {
     expect(container.textContent).not.toContain('Example Specialist')
     expect(container.textContent).toContain('Official Specialist')
 
-    await selectFilter('Updates available')
+    await selectFilter('Update available', 'Installation status')
     expect(container.textContent).not.toContain('Example Specialist')
     expect(container.textContent).toContain('Official Specialist')
 
+    await selectFilter('All', 'Installation status')
     await selectFilter('All')
     expect(container.textContent).toContain('Example Specialist')
     expect(container.textContent).toContain('Official Specialist')
@@ -360,7 +365,7 @@ describe('Specialist Marketplace settings', () => {
     await act(async () => {
       fireEvent.click(
         Array.from(container.querySelectorAll('button')).find(
-          (button) => button.textContent?.trim() === 'Show all'
+          (button) => button.textContent?.trim() === 'Clear all'
         )!
       )
     })
@@ -797,7 +802,10 @@ describe('Specialist Marketplace settings', () => {
         confirmOverwrite: true,
         skillConflictResolutions: []
       })
-      expect(onNavigate).toHaveBeenCalledWith({ kind: 'list' })
+      expect(onNavigate).toHaveBeenCalledWith({
+        kind: 'marketplace',
+        installedId: 'example-specialist'
+      })
     }
   )
 
@@ -884,6 +892,7 @@ describe('Specialist Marketplace settings', () => {
     })
 
     expect(window.api.specialist.prepareMarketplaceInstall).toHaveBeenNthCalledWith(1, {
+      downloadToken: expect.any(String),
       sourceId: 'github-example',
       specialistId: 'example-specialist',
       version: '2.0.0',
@@ -891,6 +900,7 @@ describe('Specialist Marketplace settings', () => {
       selectedConnectorIds: []
     })
     expect(window.api.specialist.prepareMarketplaceInstall).toHaveBeenNthCalledWith(2, {
+      downloadToken: expect.any(String),
       sourceId: 'github-example',
       specialistId: 'example-specialist',
       version: '2.0.0',

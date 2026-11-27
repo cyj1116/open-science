@@ -553,6 +553,9 @@ const registerSettingsIpcHandlers = ({
   ipcMainHandle('settings:retry-connector-projection', () =>
     workflows.connectors.retryConnectorProjection()
   )
+  ipcMainHandle('settings:test-custom-server', (_event, request: { id: string }) =>
+    workflows.connectors.testCustomServer(request)
+  )
   ipcMainHandle('settings:retry-custom-server', (_event, request: DisconnectCustomServerRequest) =>
     workflows.connectors.retryCustomServer(request)
   )

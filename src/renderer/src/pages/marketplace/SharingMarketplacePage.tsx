@@ -273,6 +273,7 @@ export const SharingMarketplacePage = ({
     }
     if (detail && (view.kind === 'list' || view.kind === 'marketplace')) {
       setDetail(null)
+      if (view.kind === 'marketplace' && view.installedId) setSpecialistsView(view)
       return
     }
     setDetail(null)
@@ -455,7 +456,9 @@ export const SharingMarketplacePage = ({
                 return (
                   marketplace?.specialists.find(
                     (item) => item.id === view.id && item.sourceId === view.sourceId
-                  )?.displayName ?? view.id
+                  )?.displayName ??
+                  view.displayName ??
+                  t('Specialist')
                 )
               }
               const specialist = specialists.find((item) => item.id === displayedDetail.view.id)
@@ -559,7 +562,7 @@ export const SharingMarketplacePage = ({
       case 'export':
         return t('Export ZIP')
       case 'marketplace-release':
-        return specialistsView.id
+        return specialistsView.displayName ?? t('Specialist')
       default:
         return ''
     }
@@ -952,11 +955,7 @@ export const SharingMarketplacePage = ({
               <Suspense
                 fallback={
                   connectorsView.kind === 'list' ? (
-                    <ResourceCatalogPending
-                      title={t('Connectors')}
-                      icon={ConnectorsNavIcon}
-                      marketplaceHidden
-                    />
+                    <ResourceCatalogPending title={t('Connectors')} icon={ConnectorsNavIcon} />
                   ) : (
                     <ResourceCenterLoading label={t('Loading…')} />
                   )

@@ -113,6 +113,7 @@ const COMMAND_OPTIONS = [
 type ConnectorAddFormProps = {
   active?: boolean
   initialTransport?: ConnectorMode
+  marketplaceDigest?: string
   initialTemplate?: ConnectorTemplateDefinition
   // When set, the form edits this custom server instead of adding a new one. Its name is immutable.
   editServer?: CustomServerView
@@ -122,7 +123,7 @@ type ConnectorAddFormProps = {
   credentialViewOpen?: boolean
   onCredentialViewChange?: (open: boolean) => void
   // Called after the custom server has been added/updated successfully.
-  onDone: () => void
+  onDone: (installedId?: string) => void
   onCancel: () => void
   onLeaveStateChange?: (state: SettingsEditorLeaveState | null) => void
 }
@@ -136,6 +137,7 @@ const modeForTransport = (transport: CustomServerTransport): ConnectorMode =>
 export function ConnectorAddForm({
   active = true,
   initialTransport,
+  marketplaceDigest,
   initialTemplate,
   editServer,
   editServerId,
@@ -672,6 +674,7 @@ export function ConnectorAddForm({
         }
       } else {
         const request: AddCustomServerRequest = {
+          ...(marketplaceDigest ? { marketplaceDigest } : {}),
           ...(submittedId ? { id: submittedId } : {}),
           name: currentName,
           ...shared,
@@ -706,7 +709,8 @@ export function ConnectorAddForm({
         if (request.oauthCredentialId && selectedOAuthCredential?.status !== 'connected') {
           setOAuthSignInServer(created)
         } else {
-          onDone()
+          if (marketplaceDigest) onDone(created.id)
+          else onDone()
         }
       }
     } catch (err) {

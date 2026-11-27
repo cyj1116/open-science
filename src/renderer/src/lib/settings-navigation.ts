@@ -50,11 +50,13 @@ export type CredentialsView =
   | { kind: 'credential'; id: string }
 
 export type ConnectorsView =
+  | { kind: 'marketplace'; installedId?: string }
   | { kind: 'list'; recoveryConnectorId?: string }
   | { kind: 'detail'; id: string }
   | {
       kind: 'add'
       transport: 'local' | 'remote'
+      marketplaceDigest?: string
       template?: ConnectorTemplateDefinition
       credentialView?: 'create'
     }
@@ -102,11 +104,12 @@ export type SkillMarketplaceView =
   | { kind: 'marketplace-detail'; id: string; displayName: string; snapshotId: string }
 
 export type SpecialistMarketplaceView =
-  | { kind: 'marketplace' }
+  | { kind: 'marketplace'; installedId?: string }
   | { kind: 'marketplace-sources' }
   | {
       kind: 'marketplace-release'
       sourceId: string
+      displayName?: string
       sourceName?: string
       sourceTrust?: 'official' | 'user-approved'
       id: string

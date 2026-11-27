@@ -536,6 +536,22 @@ export const sanitizeCustomMcpServer = (value: unknown): StoredCustomMcpServer |
   if ((transport === 'streamable_http' || transport === 'sse') && !url) return undefined
 
   const server: StoredCustomMcpServer = { id, name, displayName, transport, enabled }
+  const receipt = value.marketplace
+  if (
+    isRecord(receipt) &&
+    typeof receipt.source === 'string' &&
+    receipt.name === name &&
+    typeof receipt.version === 'string' &&
+    typeof receipt.digest === 'string' &&
+    /^[0-9a-f]{64}$/.test(receipt.digest)
+  ) {
+    server.marketplace = {
+      source: receipt.source,
+      name,
+      version: receipt.version,
+      digest: receipt.digest
+    }
+  }
   if (command) server.command = command
   const args = asStringArray(value.args)
   if (args.length) server.args = args

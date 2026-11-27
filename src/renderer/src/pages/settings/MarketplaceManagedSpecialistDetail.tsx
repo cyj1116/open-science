@@ -1,3 +1,4 @@
+import { useSettingsStore } from '@/stores/settings-store'
 import { ResourceDetailActions, ResourceDetailHeader } from '../marketplace/ResourceDetailLayout'
 import { inlineNoticeClassName } from '@/components/ui/notice-chrome'
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 · slop: pass */
@@ -44,6 +45,8 @@ const MarketplaceManagedSpecialistDetail = ({
   onUninstall
 }: Props): React.JSX.Element => {
   const { t } = useTranslation()
+  const skills = useSettingsStore((state) => state.skills)
+  const connectors = useSettingsStore((state) => state.connectors)
   const skillIds =
     specialist.capabilityMode === 'selected'
       ? specialist.selectedCapabilities.skillIds
@@ -86,7 +89,9 @@ const MarketplaceManagedSpecialistDetail = ({
           description={specialist.description}
         >
           <span>{t('Marketplace')}</span>
-          <span>{t('Version {{version}}', { version: specialist.packageVersion ?? '0.1.0' })}</span>
+          {specialist.packageVersion && (
+            <span>{t('Version {{version}}', { version: specialist.packageVersion })}</span>
+          )}
           {specialist.marketplaceProvenance?.publisher ? (
             <span>
               {t('Publisher: {{publisher}}', {
@@ -140,10 +145,12 @@ const MarketplaceManagedSpecialistDetail = ({
             <div>
               <p className="text-sm font-medium text-foreground">{t('Update available')}</p>
               <p className="text-xs text-muted-foreground">
-                {t('Update from v{{current}} to v{{incoming}}', {
-                  current: specialist.packageVersion ?? '0.1.0',
-                  incoming: update.version
-                })}
+                {specialist.packageVersion
+                  ? t('Update from v{{current}} to v{{incoming}}', {
+                      current: specialist.packageVersion,
+                      incoming: update.version
+                    })
+                  : t('Version {{version}}', { version: update.version })}
               </p>
             </div>
           </div>
@@ -167,13 +174,28 @@ const MarketplaceManagedSpecialistDetail = ({
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs font-medium text-muted-foreground">{skillLabel}</p>
               <p className="mt-1 break-words text-sm text-foreground">
-                {skillIds.length > 0 ? skillIds.join(', ') : t('None')}
+                {skillIds.length > 0
+                  ? skillIds
+                      .map(
+                        (id) =>
+                          skills.find((skill) => skill.id === id)?.displayName ?? t('Unavailable')
+                      )
+                      .join(', ')
+                  : t('None')}
               </p>
             </div>
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs font-medium text-muted-foreground">{connectorLabel}</p>
               <p className="mt-1 break-words text-sm text-foreground">
-                {connectorIds.length > 0 ? connectorIds.join(', ') : t('None')}
+                {connectorIds.length > 0
+                  ? connectorIds
+                      .map(
+                        (id) =>
+                          connectors.find((connector) => connector.id === id)?.displayName ??
+                          t('Unavailable Connector')
+                      )
+                      .join(', ')
+                  : t('None')}
               </p>
             </div>
           </div>
